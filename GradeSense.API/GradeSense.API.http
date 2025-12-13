@@ -1,0 +1,6 @@
+@GradeSense.API_HostAddress = http://localhost:5197
+
+GET {{GradeSense.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
