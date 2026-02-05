@@ -9,16 +9,18 @@ namespace GradeSense.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-//[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin")]
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly ILogger<UsersController> _logger;
+    private readonly IAuditLogger _auditLogger;
 
-    public UsersController(IUserService userService, ILogger<UsersController> logger)
+    public UsersController(IUserService userService, ILogger<UsersController> logger, IAuditLogger auditLogger)
     {
         _userService = userService;
         _logger = logger;
+        _auditLogger = auditLogger;
     }
 
     /// <summary>
@@ -96,6 +98,9 @@ public class UsersController : ControllerBase
 
             var user = await _userService.CreateAsync(request);
 
+            // Create audit log
+            await _auditLogger.LogAsync("Create", "User", user.Id.ToString(), $"Created user: {user.PersonalEmail} ({user.Role})");
+
             return CreatedAtAction(
                 nameof(GetById),
                 new { id = user.Id },
@@ -132,8 +137,17 @@ public class UsersController : ControllerBase
     {
         try
         {
+            // Get old data for audit trail
+            var oldUser = await _userService.GetByIdAsync(id);
+            if (oldUser == null)
+            {
+                return NotFound(ApiResponse<UserResponse>.ErrorResponse($"User with ID {id} not found"));
+            }
 
             var user = await _userService.UpdateAsync(id, request);
+
+            // Create audit log with change tracking
+            await _auditLogger.LogUpdateAsync("User", id.ToString(), oldUser, user, $"Updated user: {user.PersonalEmail}");
 
             return Ok(ApiResponse<UserResponse>.SuccessResponse(
                 user,
@@ -210,6 +224,9 @@ public class UsersController : ControllerBase
         {
             var result = await _userService.DeleteAsync(id);
 
+            // Create audit log
+            await _auditLogger.LogAsync("Delete", "User", id.ToString(), "Deleted user");
+
             return Ok(ApiResponse<bool>.SuccessResponse(
                 result,
                 "User deleted successfully"
@@ -224,6 +241,150 @@ public class UsersController : ControllerBase
             _logger.LogError(ex, "Error deleting user {UserId}", id);
             return StatusCode(500, ApiResponse<bool>.ErrorResponse(
                 "An error occurred while deleting the user"
+            ));
+        }
+    }
+
+    /// <summary>
+    /// Upload profile image for a user
+    /// </summary>
+    /// <param name="id">User ID</param>
+    /// <param name="file">Image file</param>
+    /// <returns>Profile image path</returns>
+    [HttpPost("{id}/profile-image")]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<string>>> UploadProfileImage(int id, IFormFile file)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(ApiResponse<string>.ErrorResponse("No file uploaded"));
+            }
+
+            // Validate file type
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!allowedExtensions.Contains(extension))
+            {
+                return BadRequest(ApiResponse<string>.ErrorResponse("Invalid file type. Allowed: jpg, jpeg, png, gif, webp"));
+            }
+
+            // Validate file size (max 5MB)
+            if (file.Length > 5 * 1024 * 1024)
+            {
+                return BadRequest(ApiResponse<string>.ErrorResponse("File size must be less than 5MB"));
+            }
+
+            // Check if user exists
+            var user = await _userService.GetByIdAsync(id);
+            if (user == null)
+            {
+                return NotFound(ApiResponse<string>.ErrorResponse($"User with ID {id} not found"));
+            }
+
+            // Create profiles directory if it doesn't exist
+            var profilesPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "profiles");
+            if (!Directory.Exists(profilesPath))
+            {
+                Directory.CreateDirectory(profilesPath);
+            }
+
+            // Delete old profile image if exists
+            if (!string.IsNullOrEmpty(user.ProfileImagePath))
+            {
+                var oldFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", user.ProfileImagePath.TrimStart('/'));
+                if (System.IO.File.Exists(oldFilePath))
+                {
+                    System.IO.File.Delete(oldFilePath);
+                }
+            }
+
+            // Generate unique filename
+            var fileName = $"{id}_{DateTime.UtcNow:yyyyMMddHHmmss}{extension}";
+            var filePath = Path.Combine(profilesPath, fileName);
+
+            // Save file
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Update user's profile image path
+            var relativePath = $"/profiles/{fileName}";
+            await _userService.UpdateProfileImageAsync(id, relativePath);
+
+            // Create audit log
+            await _auditLogger.LogAsync("Update", "User", id.ToString(), "Updated profile image");
+
+            return Ok(ApiResponse<string>.SuccessResponse(
+                relativePath,
+                "Profile image uploaded successfully"
+            ));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<string>.ErrorResponse(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading profile image for user {UserId}", id);
+            return StatusCode(500, ApiResponse<string>.ErrorResponse(
+                "An error occurred while uploading the profile image"
+            ));
+        }
+    }
+
+    /// <summary>
+    /// Delete profile image for a user
+    /// </summary>
+    /// <param name="id">User ID</param>
+    /// <returns>Success status</returns>
+    [HttpDelete("{id}/profile-image")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<bool>>> DeleteProfileImage(int id)
+    {
+        try
+        {
+            var user = await _userService.GetByIdAsync(id);
+            if (user == null)
+            {
+                return NotFound(ApiResponse<bool>.ErrorResponse($"User with ID {id} not found"));
+            }
+
+            // Delete file if exists
+            if (!string.IsNullOrEmpty(user.ProfileImagePath))
+            {
+                var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", user.ProfileImagePath.TrimStart('/'));
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                }
+            }
+
+            // Update user's profile image path to null
+            await _userService.UpdateProfileImageAsync(id, null);
+
+            // Create audit log
+            await _auditLogger.LogAsync("Update", "User", id.ToString(), "Deleted profile image");
+
+            return Ok(ApiResponse<bool>.SuccessResponse(
+                true,
+                "Profile image deleted successfully"
+            ));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<bool>.ErrorResponse(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting profile image for user {UserId}", id);
+            return StatusCode(500, ApiResponse<bool>.ErrorResponse(
+                "An error occurred while deleting the profile image"
             ));
         }
     }

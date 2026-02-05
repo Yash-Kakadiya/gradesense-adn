@@ -9,18 +9,21 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin")]
     public class FacultiesController : ControllerBase
     {
         private readonly IFacultyService _facultyService;
         private readonly ILogger<FacultiesController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public FacultiesController(
             IFacultyService facultyService,
-            ILogger<FacultiesController> logger)
+            ILogger<FacultiesController> logger,
+            IAuditLogger auditLogger)
         {
             _facultyService = facultyService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,9 @@ namespace GradeSense.API.Controllers
             {
                 var faculty = await _facultyService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "Faculty", faculty.Id.ToString(), $"Created faculty: {faculty.EmployeeId}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = faculty.Id },
@@ -132,7 +138,17 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldFaculty = await _facultyService.GetByIdAsync(id);
+                if (oldFaculty == null)
+                {
+                    return NotFound(ApiResponse<FacultyResponse>.ErrorResponse($"Faculty with ID {id} not found"));
+                }
+
                 var faculty = await _facultyService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("Faculty", id.ToString(), oldFaculty, faculty, $"Updated faculty: {faculty.EmployeeId}");
 
                 return Ok(ApiResponse<FacultyResponse>.SuccessResponse(
                     faculty,
@@ -168,6 +184,9 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _facultyService.DeleteAsync(id);
+
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "Faculty", id.ToString(), "Deleted faculty");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

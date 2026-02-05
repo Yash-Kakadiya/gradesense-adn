@@ -12,10 +12,25 @@ namespace GradeSense.API.Validators.User
         {
             _userRepository = userRepository;
 
-            RuleFor(x => x.Email)
-                .EmailAddress().WithMessage("Invalid email format")
-                .MaximumLength(255).WithMessage("Email cannot exceed 255 characters")
-                .When(x => !string.IsNullOrEmpty(x.Email));
+            RuleFor(x => x.PersonalEmail)
+                .EmailAddress().WithMessage("Invalid personal email format")
+                .MaximumLength(255).WithMessage("Personal email cannot exceed 255 characters")
+                .When(x => !string.IsNullOrEmpty(x.PersonalEmail));
+
+            RuleFor(x => x.InstitutionalEmail)
+                .EmailAddress().WithMessage("Invalid institutional email format")
+                .MaximumLength(255).WithMessage("Institutional email cannot exceed 255 characters")
+                .When(x => !string.IsNullOrEmpty(x.InstitutionalEmail));
+
+            RuleFor(x => x.PhoneNumber)
+                .Matches(@"^[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]*$")
+                .WithMessage("Invalid phone number format")
+                .MaximumLength(20).WithMessage("Phone number cannot exceed 20 characters")
+                .When(x => !string.IsNullOrEmpty(x.PhoneNumber));
+
+            RuleFor(x => x.ProfileImagePath)
+                .MaximumLength(500).WithMessage("Profile image path cannot exceed 500 characters")
+                .When(x => !string.IsNullOrEmpty(x.ProfileImagePath));
 
             RuleFor(x => x.FullName)
                 .MinimumLength(2).WithMessage("Full name must be at least 2 characters")
@@ -28,8 +43,9 @@ namespace GradeSense.API.Validators.User
                 .When(x => !string.IsNullOrEmpty(x.Role));
         }
 
-        private bool BeValidRole(string role)
+        private bool BeValidRole(string? role)
         {
+            if (role == null) return false;
             var validRoles = new[] { "Student", "Faculty", "Admin" };
             return validRoles.Contains(role);
         }

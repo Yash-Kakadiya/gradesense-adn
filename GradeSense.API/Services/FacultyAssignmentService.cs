@@ -67,7 +67,7 @@ namespace GradeSense.API.Services
                 FacultyId = facultyAssignment.FacultyId,
                 FacultyName = facultyAssignment.Faculty.IdNavigation.FullName,
                 FacultyEmployeeId = facultyAssignment.Faculty.EmployeeId,
-                FacultyEmail = facultyAssignment.Faculty.IdNavigation.Email,
+                FacultyEmail = facultyAssignment.Faculty.IdNavigation.PersonalEmail,
                 FacultyDesignation = facultyAssignment.Faculty.Designation ?? string.Empty,
                 Role = facultyAssignment.Role,
                 AssignmentDate = facultyAssignment.AssignmentDate,

@@ -32,9 +32,13 @@ namespace GradeSense.API.Services
                 Id = f.Id,
                 EmployeeId = f.EmployeeId,
                 FullName = f.IdNavigation.FullName,
-                Email = f.IdNavigation.Email,
+                PersonalEmail = f.IdNavigation.PersonalEmail,
+                InstitutionalEmail = f.IdNavigation.InstitutionalEmail,
+                PhoneNumber = f.IdNavigation.PhoneNumber,
+                ProfileImagePath = f.IdNavigation.ProfileImagePath,
                 DepartmentName = f.Department.Name,
                 Designation = f.Designation,
+                IsActive = f.IdNavigation.IsActive,
                 CreatedAt = f.CreatedAt
             }).ToList();
 
@@ -66,7 +70,10 @@ namespace GradeSense.API.Services
                 UpdatedAt = faculty.UpdatedAt,
                 DeletedAt = faculty.DeletedAt,
                 FullName = faculty.IdNavigation.FullName,
-                Email = faculty.IdNavigation.Email,
+                PersonalEmail = faculty.IdNavigation.PersonalEmail,
+                InstitutionalEmail = faculty.IdNavigation.InstitutionalEmail,
+                PhoneNumber = faculty.IdNavigation.PhoneNumber,
+                ProfileImagePath = faculty.IdNavigation.ProfileImagePath,
                 IsActive = faculty.IdNavigation.IsActive,
                 AssignedCoursesCount = await _facultyRepository.GetAssignedCoursesCountAsync(id),
                 CoordinatingBatchesCount = await _facultyRepository.GetCoordinatingBatchesCountAsync(id),
@@ -130,7 +137,9 @@ namespace GradeSense.API.Services
                 CreatedAt = faculty.CreatedAt,
                 UpdatedAt = faculty.UpdatedAt,
                 FullName = faculty.IdNavigation.FullName,
-                Email = faculty.IdNavigation.Email
+                PersonalEmail = faculty.IdNavigation.PersonalEmail,
+                InstitutionalEmail = faculty.IdNavigation.InstitutionalEmail,
+                PhoneNumber = faculty.IdNavigation.PhoneNumber
             };
         }
 
@@ -185,7 +194,9 @@ namespace GradeSense.API.Services
                 CreatedAt = faculty.CreatedAt,
                 UpdatedAt = faculty.UpdatedAt,
                 FullName = faculty.IdNavigation.FullName,
-                Email = faculty.IdNavigation.Email
+                PersonalEmail = faculty.IdNavigation.PersonalEmail,
+                InstitutionalEmail = faculty.IdNavigation.InstitutionalEmail,
+                PhoneNumber = faculty.IdNavigation.PhoneNumber
             };
         }
 

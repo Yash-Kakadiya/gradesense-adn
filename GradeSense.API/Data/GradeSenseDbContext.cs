@@ -43,6 +43,14 @@ public partial class GradeSenseDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
 
+            // Unique indexes for emails and phone (handled via model attributes, but ensure filter for nulls)
+            entity.HasIndex(e => e.InstitutionalEmail)
+                .HasFilter("[InstitutionalEmail] IS NOT NULL")
+                .IsUnique();
+            entity.HasIndex(e => e.PhoneNumber)
+                .HasFilter("[PhoneNumber] IS NOT NULL")
+                .IsUnique();
+
             // Check constraint for Role
             entity.HasCheckConstraint("CK_Users_Role", "[Role] IN ('Student', 'Faculty', 'Admin')");
         });

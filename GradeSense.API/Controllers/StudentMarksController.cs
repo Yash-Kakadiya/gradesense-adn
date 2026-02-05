@@ -9,18 +9,21 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin,Faculty")]
+    [Authorize(Roles = "Admin,Faculty")]
     public class StudentMarksController : ControllerBase
     {
         private readonly IStudentMarkService _studentMarkService;
         private readonly ILogger<StudentMarksController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public StudentMarksController(
             IStudentMarkService studentMarkService,
-            ILogger<StudentMarksController> logger)
+            ILogger<StudentMarksController> logger,
+            IAuditLogger auditLogger)
         {
             _studentMarkService = studentMarkService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,9 @@ namespace GradeSense.API.Controllers
             {
                 var studentMark = await _studentMarkService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "StudentMark", studentMark.Id.ToString(), $"Created student mark");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = studentMark.Id },
@@ -132,7 +138,17 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldStudentMark = await _studentMarkService.GetByIdAsync(id);
+                if (oldStudentMark == null)
+                {
+                    return NotFound(ApiResponse<StudentMarkResponse>.ErrorResponse($"Student mark with ID {id} not found"));
+                }
+
                 var studentMark = await _studentMarkService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("StudentMark", id.ToString(), oldStudentMark, studentMark, "Updated student mark");
 
                 return Ok(ApiResponse<StudentMarkResponse>.SuccessResponse(
                     studentMark,
@@ -169,6 +185,9 @@ namespace GradeSense.API.Controllers
             {
                 var result = await _studentMarkService.DeleteAsync(id);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "StudentMark", id.ToString(), "Deleted student mark");
+
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,
                     "Student mark deleted successfully"
@@ -190,5 +209,120 @@ namespace GradeSense.API.Controllers
                 ));
             }
         }
+
+        #region Bulk Operations
+
+        /// <summary>
+        /// Import grades from CSV file for a specific assessment
+        /// </summary>
+        /// <remarks>
+        /// CSV Format: EnrollmentNumber, ObtainedMarks, IsAbsent, Remarks
+        /// </remarks>
+        [HttpPost("import/csv")]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentMarkResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentMarkResponse>>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkOperationResponse<StudentMarkResponse>>>> ImportGradesFromCsv(
+            [FromQuery] int assessmentItemId,
+            [FromQuery] int graderId,
+            IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(
+                        "No file uploaded"
+                    ));
+                }
+
+                if (!file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(
+                        "Only CSV files are allowed"
+                    ));
+                }
+
+                using var stream = file.OpenReadStream();
+                var result = await _studentMarkService.BulkImportGradesAsync(assessmentItemId, graderId, stream);
+
+                var message = result.IsSuccess
+                    ? $"Import completed successfully. {result.SuccessCount} grades recorded."
+                    : $"Import completed with errors. {result.SuccessCount} succeeded, {result.ErrorCount} failed.";
+
+                return Ok(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.SuccessResponse(
+                    result,
+                    message
+                ));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error importing grades from CSV");
+                return StatusCode(500, ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(
+                    "An error occurred while importing grades"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Export grades to CSV file
+        /// </summary>
+        [HttpGet("export/csv")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        public async Task<IActionResult> ExportGradesToCsv([FromQuery] StudentMarkExportFilterRequest filter)
+        {
+            try
+            {
+                var csvBytes = await _studentMarkService.ExportGradesToCsvAsync(filter);
+                var fileName = $"grades_export_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+                return File(csvBytes, "text/csv", fileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error exporting grades to CSV");
+                return StatusCode(500, ApiResponse<object>.ErrorResponse(
+                    "An error occurred while exporting grades"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Download CSV template for grade entry
+        /// </summary>
+        /// <remarks>
+        /// Returns a CSV template pre-filled with enrolled students for the assessment
+        /// </remarks>
+        [HttpGet("import/template/{assessmentItemId}")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGradeTemplate(int assessmentItemId)
+        {
+            try
+            {
+                var csvBytes = await _studentMarkService.GetGradeTemplateAsync(assessmentItemId);
+                return File(csvBytes, "text/csv", $"grade_template_assessment_{assessmentItemId}.csv");
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating grade template for assessment {AssessmentItemId}", assessmentItemId);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse(
+                    "An error occurred while generating template"
+                ));
+            }
+        }
+
+        #endregion
     }
 }

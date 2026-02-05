@@ -72,7 +72,7 @@ namespace GradeSense.API.Services
                 StudentId = courseEnrollment.StudentId,
                 StudentName = courseEnrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = courseEnrollment.Student.EnrollmentNumber,
-                StudentEmail = courseEnrollment.Student.IdNavigation.Email,
+                StudentEmail = courseEnrollment.Student.IdNavigation.PersonalEmail,
                 RollNumber = courseEnrollment.RollNumber,
                 EnrollmentDate = courseEnrollment.EnrollmentDate,
                 Status = courseEnrollment.Status,

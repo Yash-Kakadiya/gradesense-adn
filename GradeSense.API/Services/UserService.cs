@@ -26,7 +26,10 @@ public class UserService : IUserService
         var response = new UserDetailResponse
         {
             Id = user.Id,
-            Email = user.Email,
+            PersonalEmail = user.PersonalEmail,
+            InstitutionalEmail = user.InstitutionalEmail,
+            PhoneNumber = user.PhoneNumber,
+            ProfileImagePath = user.ProfileImagePath,
             FullName = user.FullName,
             Role = user.Role,
             IsActive = user.IsActive,
@@ -71,7 +74,10 @@ public class UserService : IUserService
         var userResponses = users.Select(u => new UserListResponse
         {
             Id = u.Id,
-            Email = u.Email,
+            PersonalEmail = u.PersonalEmail,
+            InstitutionalEmail = u.InstitutionalEmail,
+            PhoneNumber = u.PhoneNumber,
+            ProfileImagePath = u.ProfileImagePath,
             FullName = u.FullName,
             Role = u.Role,
             IsActive = u.IsActive,
@@ -88,10 +94,24 @@ public class UserService : IUserService
 
     public async Task<UserResponse> CreateAsync(CreateUserRequest request)
     {
-        // Validate email uniqueness
-        if (await _userRepository.EmailExistsAsync(request.Email))
+        // Validate personal email uniqueness
+        if (await _userRepository.PersonalEmailExistsAsync(request.PersonalEmail))
         {
-            throw new InvalidOperationException("Email already exists");
+            throw new InvalidOperationException("Personal email already exists");
+        }
+
+        // Validate institutional email uniqueness if provided
+        if (!string.IsNullOrWhiteSpace(request.InstitutionalEmail) && 
+            await _userRepository.InstitutionalEmailExistsAsync(request.InstitutionalEmail))
+        {
+            throw new InvalidOperationException("Institutional email already exists");
+        }
+
+        // Validate phone number uniqueness if provided
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && 
+            await _userRepository.PhoneNumberExistsAsync(request.PhoneNumber))
+        {
+            throw new InvalidOperationException("Phone number already exists");
         }
 
         // Hash password
@@ -99,7 +119,9 @@ public class UserService : IUserService
 
         var user = new User
         {
-            Email = request.Email,
+            PersonalEmail = request.PersonalEmail,
+            InstitutionalEmail = request.InstitutionalEmail,
+            PhoneNumber = request.PhoneNumber,
             PasswordHash = passwordHash,
             FullName = request.FullName,
             Role = request.Role,
@@ -111,7 +133,10 @@ public class UserService : IUserService
         return new UserResponse
         {
             Id = createdUser.Id,
-            Email = createdUser.Email,
+            PersonalEmail = createdUser.PersonalEmail,
+            InstitutionalEmail = createdUser.InstitutionalEmail,
+            PhoneNumber = createdUser.PhoneNumber,
+            ProfileImagePath = createdUser.ProfileImagePath,
             FullName = createdUser.FullName,
             Role = createdUser.Role,
             IsActive = createdUser.IsActive,
@@ -128,14 +153,42 @@ public class UserService : IUserService
             throw new KeyNotFoundException($"User with ID {id} not found");
         }
 
-        // Validate email uniqueness if email is being changed
-        if (!string.IsNullOrWhiteSpace(request.Email) && request.Email != user.Email)
+        // Validate personal email uniqueness if being changed
+        if (!string.IsNullOrWhiteSpace(request.PersonalEmail) && request.PersonalEmail != user.PersonalEmail)
         {
-            if (await _userRepository.EmailExistsAsync(request.Email, id))
+            if (await _userRepository.PersonalEmailExistsAsync(request.PersonalEmail, id))
             {
-                throw new InvalidOperationException("Email already exists");
+                throw new InvalidOperationException("Personal email already exists");
             }
-            user.Email = request.Email;
+            user.PersonalEmail = request.PersonalEmail;
+        }
+
+        // Validate institutional email uniqueness if being changed
+        if (request.InstitutionalEmail != null && request.InstitutionalEmail != user.InstitutionalEmail)
+        {
+            if (!string.IsNullOrWhiteSpace(request.InstitutionalEmail) && 
+                await _userRepository.InstitutionalEmailExistsAsync(request.InstitutionalEmail, id))
+            {
+                throw new InvalidOperationException("Institutional email already exists");
+            }
+            user.InstitutionalEmail = string.IsNullOrWhiteSpace(request.InstitutionalEmail) ? null : request.InstitutionalEmail;
+        }
+
+        // Validate phone number uniqueness if being changed
+        if (request.PhoneNumber != null && request.PhoneNumber != user.PhoneNumber)
+        {
+            if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && 
+                await _userRepository.PhoneNumberExistsAsync(request.PhoneNumber, id))
+            {
+                throw new InvalidOperationException("Phone number already exists");
+            }
+            user.PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber;
+        }
+
+        // Update profile image path if provided
+        if (request.ProfileImagePath != null)
+        {
+            user.ProfileImagePath = string.IsNullOrWhiteSpace(request.ProfileImagePath) ? null : request.ProfileImagePath;
         }
 
         // Update fields if provided
@@ -153,7 +206,10 @@ public class UserService : IUserService
         return new UserResponse
         {
             Id = updatedUser.Id,
-            Email = updatedUser.Email,
+            PersonalEmail = updatedUser.PersonalEmail,
+            InstitutionalEmail = updatedUser.InstitutionalEmail,
+            PhoneNumber = updatedUser.PhoneNumber,
+            ProfileImagePath = updatedUser.ProfileImagePath,
             FullName = updatedUser.FullName,
             Role = updatedUser.Role,
             IsActive = updatedUser.IsActive,
@@ -191,5 +247,17 @@ public class UserService : IUserService
         }
 
         return await _userRepository.DeleteAsync(id);
+    }
+
+    public async Task UpdateProfileImageAsync(int id, string? profileImagePath)
+    {
+        var user = await _userRepository.GetByIdAsync(id);
+        if (user == null)
+        {
+            throw new KeyNotFoundException($"User with ID {id} not found");
+        }
+
+        user.ProfileImagePath = profileImagePath;
+        await _userRepository.UpdateAsync(user);
     }
 }

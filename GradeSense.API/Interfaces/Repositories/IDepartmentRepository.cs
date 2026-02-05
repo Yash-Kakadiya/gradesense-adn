@@ -9,6 +9,7 @@ namespace GradeSense.API.Interfaces.Repositories
         Task<Department?> GetByNameAsync(string name);
         Task<Department?> GetByCodeAsync(string code);
         Task<(List<Department> Departments, int TotalCount)> GetAllAsync(DepartmentFilterRequest filter);
+        Task<List<Department>> GetAllForLookupAsync();
         Task<Department> CreateAsync(Department department);
         Task<Department> UpdateAsync(Department department);
         Task<bool> DeleteAsync(int id);

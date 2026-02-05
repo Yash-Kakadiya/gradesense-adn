@@ -1068,14 +1068,13 @@ namespace GradeSense.API.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Email")
+                    b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(255)
                         .IsUnicode(false)
                         .HasColumnType("varchar(255)");
 
-                    b.Property<string>("FullName")
-                        .IsRequired()
+                    b.Property<string>("InstitutionalEmail")
                         .HasMaxLength(255)
                         .IsUnicode(false)
                         .HasColumnType("varchar(255)");
@@ -1091,6 +1090,22 @@ namespace GradeSense.API.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(255)");
 
+                    b.Property<string>("PersonalEmail")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("ProfileImagePath")
+                        .HasMaxLength(500)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(500)");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -1101,10 +1116,26 @@ namespace GradeSense.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("InstitutionalEmail")
+                        .IsUnique()
+                        .HasFilter("[InstitutionalEmail] IS NOT NULL");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasFilter("[PhoneNumber] IS NOT NULL");
+
                     b.HasIndex(new[] { "IsActive" }, "idx_users_active");
 
-                    b.HasIndex(new[] { "Email" }, "idx_users_email")
+                    b.HasIndex(new[] { "InstitutionalEmail" }, "idx_users_institutional_email")
+                        .IsUnique()
+                        .HasFilter("[InstitutionalEmail] IS NOT NULL");
+
+                    b.HasIndex(new[] { "PersonalEmail" }, "idx_users_personal_email")
                         .IsUnique();
+
+                    b.HasIndex(new[] { "PhoneNumber" }, "idx_users_phone")
+                        .IsUnique()
+                        .HasFilter("[PhoneNumber] IS NOT NULL");
 
                     b.HasIndex(new[] { "Role" }, "idx_users_role");
 

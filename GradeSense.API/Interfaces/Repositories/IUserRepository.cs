@@ -12,6 +12,8 @@ namespace GradeSense.API.Interfaces.Repositories
         Task<User> UpdateAsync(User user);
         Task<bool> DeleteAsync(int id);
         Task<bool> ExistsAsync(int id);
-        Task<bool> EmailExistsAsync(string email, int? excludeUserId = null);
+        Task<bool> PersonalEmailExistsAsync(string email, int? excludeUserId = null);
+        Task<bool> InstitutionalEmailExistsAsync(string email, int? excludeUserId = null);
+        Task<bool> PhoneNumberExistsAsync(string phoneNumber, int? excludeUserId = null);
     }
 }

@@ -172,6 +172,9 @@ builder.Services.AddScoped<IAttendanceRecordService, AttendanceRecordService>();
 builder.Services.AddScoped<IUploadHistoryService, UploadHistoryService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IPredictionService, PredictionService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IAuditLogger, AuditLogger>();
+builder.Services.AddScoped<IExportService, ExportService>();
 
 
 
@@ -327,6 +330,9 @@ app.Use(async (context, next) =>
     context.Response.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
     await next();
 });
+
+// Serve static files from wwwroot (for profile images)
+app.UseStaticFiles();
 
 app.UseHttpsRedirection();
 

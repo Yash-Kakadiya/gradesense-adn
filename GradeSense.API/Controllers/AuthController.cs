@@ -15,11 +15,13 @@ namespace GradeSense.API.Controllers
     {
         private readonly IAuthService _authService;
         private readonly ILogger<AuthController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
-        public AuthController(IAuthService authService, ILogger<AuthController> logger)
+        public AuthController(IAuthService authService, ILogger<AuthController> logger, IAuditLogger auditLogger)
         {
             _authService = authService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -43,6 +45,9 @@ namespace GradeSense.API.Controllers
                 // Log successful login
                 _logger.LogInformation("User {Email} logged in successfully", request.Email);
 
+                // Create audit log for successful login
+                await _auditLogger.LogAsync("Login", "User", result.User.Id.ToString(), $"{result.User.Role} logged in");
+
                 return Ok(ApiResponse<LoginResponse>.SuccessResponse(
                     result,
                     "Login successful"
@@ -52,6 +57,9 @@ namespace GradeSense.API.Controllers
             {
                 // Log failed login attempt
                 _logger.LogWarning("Failed login attempt for {Email}: {Message}", request.Email, ex.Message);
+
+                // Create audit log for failed login
+                await _auditLogger.LogAsync("FailedLogin", "User", request.Email, ex.Message);
 
                 return Unauthorized(ApiResponse<LoginResponse>.ErrorResponse(ex.Message));
             }
@@ -133,6 +141,9 @@ namespace GradeSense.API.Controllers
 
                 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 _logger.LogInformation("User {UserId} logged out successfully", userId);
+
+                // Create audit log for logout
+                await _auditLogger.LogAsync("Logout", "User", userId ?? "unknown", "User logged out");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     true,

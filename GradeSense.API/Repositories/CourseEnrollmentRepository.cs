@@ -181,5 +181,31 @@ namespace GradeSense.API.Repositories
                 .Where(p => p.CourseEnrollmentId == enrollmentId && p.DeletedAt == null)
                 .CountAsync();
         }
+
+        public async Task<List<CourseEnrollment>> GetByCourseOfferingIdAsync(int courseOfferingId)
+        {
+            return await _context.CourseEnrollments
+                .Include(ce => ce.Student)
+                    .ThenInclude(s => s.IdNavigation)
+                .Where(ce => ce.CourseOfferingId == courseOfferingId && 
+                            ce.DeletedAt == null && 
+                            ce.Status == "Active")
+                .OrderBy(ce => ce.Student.EnrollmentNumber)
+                .ToListAsync();
+        }
+
+        public async Task<CourseEnrollment?> GetByStudentEnrollmentNumberAndCourseOfferingAsync(
+            string enrollmentNumber, int courseOfferingId)
+        {
+            return await _context.CourseEnrollments
+                .Include(ce => ce.Student)
+                    .ThenInclude(s => s.IdNavigation)
+                .Include(ce => ce.CourseOffering)
+                    .ThenInclude(co => co.Subject)
+                .FirstOrDefaultAsync(ce => 
+                    ce.Student.EnrollmentNumber == enrollmentNumber && 
+                    ce.CourseOfferingId == courseOfferingId && 
+                    ce.DeletedAt == null);
+        }
     }
 }

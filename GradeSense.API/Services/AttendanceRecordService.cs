@@ -61,7 +61,7 @@ namespace GradeSense.API.Services
                 EnrollmentId = attendanceRecord.EnrollmentId,
                 StudentName = attendanceRecord.Enrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = attendanceRecord.Enrollment.Student.EnrollmentNumber,
-                StudentEmail = attendanceRecord.Enrollment.Student.IdNavigation.Email,
+                StudentEmail = attendanceRecord.Enrollment.Student.IdNavigation.PersonalEmail,
                 StudentId = attendanceRecord.Enrollment.StudentId,
                 CourseOfferingId = attendanceRecord.Enrollment.CourseOfferingId,
                 SubjectCode = attendanceRecord.Enrollment.CourseOffering.Subject.Code,

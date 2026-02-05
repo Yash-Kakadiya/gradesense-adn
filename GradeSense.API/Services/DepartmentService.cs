@@ -38,9 +38,9 @@ namespace GradeSense.API.Services
 
             return new PagedResponse<DepartmentResponse>(
                 data,
-                total,
                 filter.PageNumber,
-                filter.PageSize
+                filter.PageSize,
+                total
             );
         }
 
@@ -56,7 +56,7 @@ namespace GradeSense.API.Services
                 Code = department.Code,
                 HODUserId = department.HoduserId,
                 HODName = department.Hoduser?.FullName,
-                HODEmail = department.Hoduser?.Email,
+                HODEmail = department.Hoduser?.PersonalEmail,
                 IsActive = department.IsActive,
                 CreatedAt = department.CreatedAt,
                 UpdatedAt = department.UpdatedAt,

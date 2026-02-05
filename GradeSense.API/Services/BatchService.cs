@@ -64,7 +64,7 @@ namespace GradeSense.API.Services
                 DepartmentCode = batch.Department.Code,
                 ClassCoordinatorId = batch.ClassCoordinatorId,
                 ClassCoordinatorName = batch.ClassCoordinator?.IdNavigation.FullName,
-                ClassCoordinatorEmail = batch.ClassCoordinator?.IdNavigation.Email,
+                ClassCoordinatorEmail = batch.ClassCoordinator?.IdNavigation.PersonalEmail,
                 ClassCoordinatorEmployeeId = batch.ClassCoordinator?.EmployeeId,
                 Division = batch.Division,
                 IsActive = batch.IsActive,

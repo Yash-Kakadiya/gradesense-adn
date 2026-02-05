@@ -1,6 +1,7 @@
 ﻿using GradeSense.API.DTOs.Common;
 using GradeSense.API.DTOs.StudentMark.Request;
 using GradeSense.API.DTOs.StudentMark.Response;
+using GradeSense.API.Helpers;
 using GradeSense.API.Interfaces.Repositories;
 using GradeSense.API.Interfaces.Services;
 using GradeSense.API.Models;
@@ -74,7 +75,7 @@ namespace GradeSense.API.Services
                 StudentId = studentMark.Enrollment.StudentId,
                 StudentName = studentMark.Enrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = studentMark.Enrollment.Student.EnrollmentNumber,
-                StudentEmail = studentMark.Enrollment.Student.IdNavigation.Email,
+                StudentEmail = studentMark.Enrollment.Student.IdNavigation.PersonalEmail,
                 AssessmentItemId = studentMark.AssessmentItemId,
                 AssessmentItemName = studentMark.AssessmentItem.Name,
                 AssessmentCalculationType = studentMark.AssessmentItem.CalculationType,
@@ -268,5 +269,226 @@ namespace GradeSense.API.Services
 
             return await _studentMarkRepository.DeleteAsync(id);
         }
+
+        #region Bulk Operations
+
+        public async Task<BulkOperationResponse<StudentMarkResponse>> BulkImportGradesAsync(
+            int assessmentItemId, int graderId, Stream csvStream)
+        {
+            var response = new BulkOperationResponse<StudentMarkResponse>();
+
+            // Validate AssessmentItem exists
+            var assessmentItem = await _assessmentItemRepository.GetByIdAsync(assessmentItemId);
+            if (assessmentItem == null)
+                throw new KeyNotFoundException("Assessment item not found");
+
+            if (!assessmentItem.IsActive)
+                throw new InvalidOperationException("Assessment item is not active");
+
+            // Validate Grader exists
+            if (!await _facultyRepository.ExistsAsync(graderId))
+                throw new KeyNotFoundException("Grader (Faculty) not found");
+
+            // Parse CSV
+            var (records, parseErrors) = await CsvHelperService.ParseCsvWithErrorsAsync<StudentMarkCsvImportRequest>(csvStream);
+
+            // Add parse errors
+            foreach (var error in parseErrors)
+            {
+                response.Errors.Add(new BulkOperationError
+                {
+                    RowNumber = error.RowNumber,
+                    ErrorMessage = $"CSV Parse Error: {error.ErrorMessage}",
+                    Identifier = error.RawData
+                });
+            }
+
+            response.TotalRecords = records.Count + parseErrors.Count;
+
+            // Get course offering ID from assessment item
+            var courseOfferingId = assessmentItem.EvaluationScheme.CourseOfferingId;
+
+            int rowNumber = 1; // Start after header
+            foreach (var record in records)
+            {
+                rowNumber++;
+                var errors = new Dictionary<string, string>();
+
+                try
+                {
+                    // Validate required fields
+                    if (string.IsNullOrWhiteSpace(record.EnrollmentNumber))
+                    {
+                        errors["EnrollmentNumber"] = "Enrollment number is required";
+                    }
+
+                    // Find enrollment by student enrollment number and course offering
+                    var enrollment = await _courseEnrollmentRepository
+                        .GetByStudentEnrollmentNumberAndCourseOfferingAsync(record.EnrollmentNumber, courseOfferingId);
+
+                    if (enrollment == null)
+                    {
+                        errors["EnrollmentNumber"] = $"Student '{record.EnrollmentNumber}' not enrolled in this course";
+                    }
+                    else
+                    {
+                        // Check if mark already exists
+                        if (await _studentMarkRepository.MarkExistsForEnrollmentAndAssessmentAsync(
+                            enrollment.Id, assessmentItemId))
+                        {
+                            errors["EnrollmentNumber"] = $"Mark already exists for student '{record.EnrollmentNumber}'";
+                        }
+                    }
+
+                    // Validate marks
+                    if (!record.IsAbsent && record.ObtainedMarks.HasValue)
+                    {
+                        if (record.ObtainedMarks.Value < 0)
+                            errors["ObtainedMarks"] = "Obtained marks cannot be negative";
+
+                        if (record.ObtainedMarks.Value > assessmentItem.MaxMarks)
+                            errors["ObtainedMarks"] = $"Obtained marks ({record.ObtainedMarks}) exceed max marks ({assessmentItem.MaxMarks})";
+                    }
+
+                    if (record.IsAbsent && record.ObtainedMarks.HasValue)
+                    {
+                        errors["IsAbsent"] = "Cannot have marks when marked as absent";
+                    }
+
+                    if (errors.Count > 0)
+                    {
+                        response.Errors.Add(new BulkOperationError
+                        {
+                            RowNumber = rowNumber,
+                            Identifier = record.EnrollmentNumber,
+                            ErrorMessage = "Validation failed",
+                            FieldErrors = errors
+                        });
+                        continue;
+                    }
+
+                    // Create student mark
+                    var studentMark = new StudentMark
+                    {
+                        EnrollmentId = enrollment!.Id,
+                        AssessmentItemId = assessmentItemId,
+                        ObtainedMarks = record.IsAbsent ? null : record.ObtainedMarks,
+                        IsAbsent = record.IsAbsent,
+                        Remarks = record.Remarks,
+                        GraderId = graderId,
+                        GradedDate = DateTime.Now
+                    };
+
+                    await _studentMarkRepository.CreateAsync(studentMark);
+
+                    // Reload with navigation properties
+                    studentMark = await _studentMarkRepository.GetByIdAsync(studentMark.Id);
+
+                    response.SuccessfulRecords.Add(new StudentMarkResponse
+                    {
+                        Id = studentMark!.Id,
+                        EnrollmentId = studentMark.EnrollmentId,
+                        StudentName = studentMark.Enrollment.Student.IdNavigation.FullName,
+                        EnrollmentNumber = studentMark.Enrollment.Student.EnrollmentNumber,
+                        AssessmentItemId = studentMark.AssessmentItemId,
+                        AssessmentItemName = studentMark.AssessmentItem.Name,
+                        AssessmentMaxMarks = studentMark.AssessmentItem.MaxMarks,
+                        ObtainedMarks = studentMark.ObtainedMarks,
+                        IsAbsent = studentMark.IsAbsent,
+                        Remarks = studentMark.Remarks,
+                        GraderId = studentMark.GraderId,
+                        GraderName = studentMark.Grader.IdNavigation.FullName,
+                        GradedDate = studentMark.GradedDate,
+                        CreatedAt = studentMark.CreatedAt
+                    });
+                }
+                catch (Exception ex)
+                {
+                    response.Errors.Add(new BulkOperationError
+                    {
+                        RowNumber = rowNumber,
+                        Identifier = record.EnrollmentNumber,
+                        ErrorMessage = ex.Message
+                    });
+                }
+            }
+
+            response.SuccessCount = response.SuccessfulRecords.Count;
+            response.ErrorCount = response.Errors.Count;
+
+            return response;
+        }
+
+        public async Task<byte[]> ExportGradesToCsvAsync(StudentMarkExportFilterRequest filter)
+        {
+            List<StudentMark> studentMarks;
+
+            if (filter.AssessmentItemId.HasValue)
+            {
+                studentMarks = await _studentMarkRepository.GetByAssessmentItemIdAsync(filter.AssessmentItemId.Value);
+            }
+            else if (filter.CourseOfferingId.HasValue)
+            {
+                studentMarks = await _studentMarkRepository.GetByCourseOfferingIdAsync(filter.CourseOfferingId.Value);
+            }
+            else
+            {
+                // Get all with basic filter
+                var filterRequest = new StudentMarkFilterRequest
+                {
+                    StudentId = filter.StudentId,
+                    PageSize = int.MaxValue
+                };
+                var (marks, _) = await _studentMarkRepository.GetAllAsync(filterRequest);
+                studentMarks = marks;
+            }
+
+            var exportData = studentMarks.Select(sm => new StudentMarkCsvExportResponse
+            {
+                Id = sm.Id,
+                EnrollmentNumber = sm.Enrollment.Student.EnrollmentNumber,
+                StudentName = sm.Enrollment.Student.IdNavigation.FullName,
+                SubjectCode = sm.Enrollment.CourseOffering.Subject.Code,
+                SubjectName = sm.Enrollment.CourseOffering.Subject.Name,
+                AssessmentName = sm.AssessmentItem.Name,
+                MaxMarks = sm.AssessmentItem.MaxMarks,
+                ObtainedMarks = sm.ObtainedMarks,
+                Percentage = sm.ObtainedMarks.HasValue 
+                    ? Math.Round((sm.ObtainedMarks.Value / sm.AssessmentItem.MaxMarks) * 100, 2) 
+                    : null,
+                IsAbsent = sm.IsAbsent,
+                Remarks = sm.Remarks,
+                GradedBy = sm.Grader.IdNavigation.FullName,
+                GradedDate = sm.GradedDate
+            }).ToList();
+
+            return await CsvHelperService.GenerateCsvAsync(exportData);
+        }
+
+        public async Task<byte[]> GetGradeTemplateAsync(int assessmentItemId)
+        {
+            // Validate AssessmentItem exists
+            var assessmentItem = await _assessmentItemRepository.GetByIdAsync(assessmentItemId);
+            if (assessmentItem == null)
+                throw new KeyNotFoundException("Assessment item not found");
+
+            // Get all enrolled students for this course offering
+            var courseOfferingId = assessmentItem.EvaluationScheme.CourseOfferingId;
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(courseOfferingId);
+
+            // Create template with student data pre-filled
+            var templateData = enrollments.Select(e => new GradeTemplateCsvResponse
+            {
+                EnrollmentNumber = e.Student.EnrollmentNumber,
+                StudentName = e.Student.IdNavigation.FullName,
+                ObtainedMarks = "", // Empty for teachers to fill
+                IsAbsent = "false",
+                Remarks = ""
+            }).ToList();
+
+            return await CsvHelperService.GenerateCsvAsync(templateData);
+        }
+
+        #endregion
     }
 }

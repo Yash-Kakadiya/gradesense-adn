@@ -54,7 +54,9 @@ namespace GradeSense.API.Repositories
                 query = query.Where(s =>
                     s.EnrollmentNumber.ToLower().Contains(searchTerm) ||
                     s.IdNavigation.FullName.ToLower().Contains(searchTerm) ||
-                    s.IdNavigation.Email.ToLower().Contains(searchTerm));
+                    s.IdNavigation.PersonalEmail.ToLower().Contains(searchTerm) ||
+                    (s.IdNavigation.InstitutionalEmail != null && s.IdNavigation.InstitutionalEmail.ToLower().Contains(searchTerm)) ||
+                    (s.IdNavigation.PhoneNumber != null && s.IdNavigation.PhoneNumber.Contains(searchTerm)));
             }
 
             if (filter.DepartmentId.HasValue)

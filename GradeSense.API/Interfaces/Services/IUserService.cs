@@ -12,4 +12,5 @@ public interface IUserService
     Task<UserResponse> UpdateAsync(int id, UpdateUserRequest request);
     Task<bool> ChangePasswordAsync(int id, ChangePasswordRequest request);
     Task<bool> DeleteAsync(int id);
+    Task UpdateProfileImageAsync(int id, string? profileImagePath);
 }

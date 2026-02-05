@@ -8,10 +8,21 @@ namespace GradeSense.API.Validators.User
     {
         public CreateUserRequestValidator()
         {
-            RuleFor(x => x.Email)
-                .NotEmpty().WithMessage("Email is required")
-                .EmailAddress().WithMessage("Invalid email format")
-                .MaximumLength(255).WithMessage("Email cannot exceed 255 characters");
+            RuleFor(x => x.PersonalEmail)
+                .NotEmpty().WithMessage("Personal email is required")
+                .EmailAddress().WithMessage("Invalid personal email format")
+                .MaximumLength(255).WithMessage("Personal email cannot exceed 255 characters");
+
+            RuleFor(x => x.InstitutionalEmail)
+                .EmailAddress().WithMessage("Invalid institutional email format")
+                .MaximumLength(255).WithMessage("Institutional email cannot exceed 255 characters")
+                .When(x => !string.IsNullOrEmpty(x.InstitutionalEmail));
+
+            RuleFor(x => x.PhoneNumber)
+                .Matches(@"^[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]*$")
+                .WithMessage("Invalid phone number format")
+                .MaximumLength(20).WithMessage("Phone number cannot exceed 20 characters")
+                .When(x => !string.IsNullOrEmpty(x.PhoneNumber));
 
             RuleFor(x => x.Password)
                 .NotEmpty().WithMessage("Password is required")

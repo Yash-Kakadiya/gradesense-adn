@@ -6,7 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GradeSense.API.Models;
 
-[Index("Email", Name = "idx_users_email", IsUnique = true)]
+[Index("PersonalEmail", Name = "idx_users_personal_email", IsUnique = true)]
+[Index("InstitutionalEmail", Name = "idx_users_institutional_email", IsUnique = true)]
+[Index("PhoneNumber", Name = "idx_users_phone", IsUnique = true)]
 [Index("Role", Name = "idx_users_role")]
 [Index("IsActive", Name = "idx_users_active")]
 public partial class User
@@ -14,11 +16,25 @@ public partial class User
     [Key]
     public int Id { get; set; }
 
-    [Required(ErrorMessage = "Email is required")]
+    [Required(ErrorMessage = "Personal email is required")]
     [StringLength(255)]
     [Unicode(false)]
     [EmailAddress(ErrorMessage = "Invalid email format")]
-    public string Email { get; set; } = null!;
+    public string PersonalEmail { get; set; } = null!;
+
+    [StringLength(255)]
+    [Unicode(false)]
+    [EmailAddress(ErrorMessage = "Invalid institutional email format")]
+    public string? InstitutionalEmail { get; set; }
+
+    [StringLength(20)]
+    [Unicode(false)]
+    [Phone(ErrorMessage = "Invalid phone number format")]
+    public string? PhoneNumber { get; set; }
+
+    [StringLength(500)]
+    [Unicode(false)]
+    public string? ProfileImagePath { get; set; }
 
     [Required(ErrorMessage = "Password hash is required")]
     [StringLength(255)]

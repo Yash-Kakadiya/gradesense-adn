@@ -162,5 +162,40 @@ namespace GradeSense.API.Repositories
 
             return await query.AnyAsync();
         }
+
+        public async Task<List<StudentMark>> GetByAssessmentItemIdAsync(int assessmentItemId)
+        {
+            return await _context.StudentMarks
+                .Include(sm => sm.Enrollment)
+                    .ThenInclude(e => e.Student)
+                        .ThenInclude(s => s.IdNavigation)
+                .Include(sm => sm.Enrollment)
+                    .ThenInclude(e => e.CourseOffering)
+                        .ThenInclude(co => co.Subject)
+                .Include(sm => sm.AssessmentItem)
+                .Include(sm => sm.Grader)
+                    .ThenInclude(g => g.IdNavigation)
+                .Where(sm => sm.AssessmentItemId == assessmentItemId && sm.DeletedAt == null)
+                .OrderBy(sm => sm.Enrollment.Student.EnrollmentNumber)
+                .ToListAsync();
+        }
+
+        public async Task<List<StudentMark>> GetByCourseOfferingIdAsync(int courseOfferingId)
+        {
+            return await _context.StudentMarks
+                .Include(sm => sm.Enrollment)
+                    .ThenInclude(e => e.Student)
+                        .ThenInclude(s => s.IdNavigation)
+                .Include(sm => sm.Enrollment)
+                    .ThenInclude(e => e.CourseOffering)
+                        .ThenInclude(co => co.Subject)
+                .Include(sm => sm.AssessmentItem)
+                .Include(sm => sm.Grader)
+                    .ThenInclude(g => g.IdNavigation)
+                .Where(sm => sm.Enrollment.CourseOfferingId == courseOfferingId && sm.DeletedAt == null)
+                .OrderBy(sm => sm.Enrollment.Student.EnrollmentNumber)
+                .ThenBy(sm => sm.AssessmentItem.Name)
+                .ToListAsync();
+        }
     }
 }

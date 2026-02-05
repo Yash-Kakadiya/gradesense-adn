@@ -1,0 +1,300 @@
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { PageHeader } from '@/components/layout'
+import { Card, Badge, Select, Table, EmptyState } from '@/components/common'
+import { LoadingInline } from '@/components/common/Spinner'
+import { useAuth } from '@/context/AuthContext'
+import { courseEnrollmentService } from '@/services/courseEnrollmentService'
+import { studentMarkService } from '@/services/studentMarkService'
+import { Award, TrendingUp, Target, BookOpen, GraduationCap } from 'lucide-react'
+
+const StudentGradesPage = () => {
+    const { user } = useAuth()
+    const [selectedCourse, setSelectedCourse] = useState('')
+
+    // Fetch student's course enrollments
+    const { data: enrollmentsData, isLoading: loadingEnrollments } = useQuery({
+        queryKey: ['student-enrollments-grades', user?.StudentId],
+        queryFn: () => courseEnrollmentService.getByStudent(user?.StudentId),
+        enabled: !!user?.StudentId,
+    })
+
+    // Fetch student marks for selected course
+    const { data: marksData, isLoading: loadingMarks } = useQuery({
+        queryKey: ['student-marks', selectedCourse],
+        queryFn: () => studentMarkService.getAll({
+            studentId: user?.StudentId,
+            courseOfferingId: selectedCourse,
+            pageSize: 100,
+        }),
+        enabled: !!selectedCourse && !!user?.StudentId,
+    })
+
+    // Extract data from API responses (PascalCase)
+    const enrollments = enrollmentsData?.Data?.Data || enrollmentsData?.Data || []
+    const marks = marksData?.Data?.Data || []
+
+    // Build semester options from enrollments
+    const semesters = useMemo(() => {
+        const semesterSet = new Set()
+        enrollments.forEach(e => {
+            if (e.Semester) semesterSet.add(e.Semester)
+        })
+        return Array.from(semesterSet).sort().map(s => ({
+            value: s.toString(),
+            label: `Semester ${s}`,
+        }))
+    }, [enrollments])
+
+    // Build course options
+    const courseOptions = enrollments.map(e => ({
+        value: e.CourseOfferingId?.toString() || e.Id?.toString(),
+        label: `${e.SubjectCode || ''} - ${e.SubjectName}`,
+        semester: e.Semester,
+        credits: e.Credits,
+    }))
+
+    // Calculate statistics
+    const stats = useMemo(() => {
+        const totalCredits = enrollments.reduce((sum, e) => sum + (e.Credits || 0), 0)
+        const enrolledCourses = enrollments.length
+        const avgPercentage = marks.length > 0
+            ? marks.reduce((sum, m) => sum + ((m.ObtainedMarks || 0) / (m.AssessmentMaxMarks || 1) * 100), 0) / marks.length
+            : 0
+        return { totalCredits, enrolledCourses, avgPercentage }
+    }, [enrollments, marks])
+
+    // Get selected course details
+    const selectedCourseDetails = courseOptions.find(c => c.value === selectedCourse)
+
+    const getGradeBadgeColor = (percentage) => {
+        if (percentage >= 90) return 'success'
+        if (percentage >= 75) return 'primary'
+        if (percentage >= 60) return 'warning'
+        return 'danger'
+    }
+
+    const marksColumns = [
+        {
+            header: 'Assessment',
+            accessor: 'AssessmentItemName',
+            cell: (row) => (
+                <span className="font-medium">{row.AssessmentItemName}</span>
+            ),
+        },
+        {
+            header: 'Max Marks',
+            accessor: 'AssessmentMaxMarks',
+            cell: (row) => (
+                <span className="text-gray-600">{row.AssessmentMaxMarks}</span>
+            ),
+        },
+        {
+            header: 'Obtained',
+            accessor: 'ObtainedMarks',
+            cell: (row) => (
+                <span className="font-semibold text-blue-600">
+                    {row.ObtainedMarks ?? '-'}
+                </span>
+            ),
+        },
+        {
+            header: 'Percentage',
+            cell: (row) => {
+                const pct = row.ObtainedMarks !== null && row.AssessmentMaxMarks > 0
+                    ? ((row.ObtainedMarks / row.AssessmentMaxMarks) * 100).toFixed(1)
+                    : null
+                return pct ? (
+                    <Badge variant={getGradeBadgeColor(parseFloat(pct))}>
+                        {pct}%
+                    </Badge>
+                ) : (
+                    <span className="text-gray-400">-</span>
+                )
+            },
+        },
+        {
+            header: 'Status',
+            cell: (row) => (
+                <Badge variant={row.IsAbsent ? 'danger' : row.ObtainedMarks !== null ? 'success' : 'warning'}>
+                    {row.IsAbsent ? 'Absent' : row.ObtainedMarks !== null ? 'Graded' : 'Pending'}
+                </Badge>
+            ),
+        },
+    ]
+
+    if (loadingEnrollments) {
+        return <LoadingInline message="Loading your grades..." />
+    }
+
+    return (
+        <div className="space-y-6">
+            <PageHeader
+                title="My Grades"
+                description="View your academic performance and grades"
+            />
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="border-0 shadow-sm overflow-hidden">
+                    <Card.Body>
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg shadow-sm">
+                                <Award className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-500">Courses Enrolled</p>
+                                <p className="text-2xl font-bold text-gray-900">
+                                    {stats.enrolledCourses}
+                                </p>
+                            </div>
+                        </div>
+                    </Card.Body>
+                </Card>
+                <Card className="border-0 shadow-sm overflow-hidden">
+                    <Card.Body>
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-lg shadow-sm">
+                                <GraduationCap className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-500">Total Credits</p>
+                                <p className="text-2xl font-bold text-gray-900">
+                                    {stats.totalCredits}
+                                </p>
+                            </div>
+                        </div>
+                    </Card.Body>
+                </Card>
+                <Card className="border-0 shadow-sm overflow-hidden">
+                    <Card.Body>
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-gradient-to-br from-purple-400 to-violet-500 rounded-lg shadow-sm">
+                                <Target className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-500">Avg Score</p>
+                                <p className="text-2xl font-bold text-gray-900">
+                                    {stats.avgPercentage > 0 ? `${stats.avgPercentage.toFixed(1)}%` : '-'}
+                                </p>
+                            </div>
+                        </div>
+                    </Card.Body>
+                </Card>
+            </div>
+
+            {/* Course Selector */}
+            <Card className="border-0 shadow-sm">
+                <Card.Body>
+                    <div className="flex flex-wrap items-center gap-4">
+                        <Select
+                            label="Select Course"
+                            options={[{ value: '', label: 'Choose a course to view grades...' }, ...courseOptions]}
+                            value={selectedCourse}
+                            onChange={(e) => setSelectedCourse(e.target.value)}
+                            className="w-full md:w-80"
+                        />
+                        {selectedCourseDetails && (
+                            <div className="flex items-center gap-4 ml-auto text-sm text-gray-500">
+                                <span>Credits: <strong className="text-gray-700">{selectedCourseDetails.credits}</strong></span>
+                            </div>
+                        )}
+                    </div>
+                </Card.Body>
+            </Card>
+
+            {/* Marks Table */}
+            {selectedCourse ? (
+                loadingMarks ? (
+                    <LoadingInline message="Loading marks..." />
+                ) : marks.length === 0 ? (
+                    <EmptyState
+                        icon={BookOpen}
+                        title="No grades available"
+                        description="No assessments have been graded for this course yet"
+                    />
+                ) : (
+                    <Card className="border-0 shadow-sm overflow-hidden">
+                        <Card.Header className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+                            <Card.Title className="flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-blue-600" />
+                                Assessment Marks
+                            </Card.Title>
+                            <Card.Description>
+                                Your marks for {selectedCourseDetails?.label || 'the selected course'}
+                            </Card.Description>
+                        </Card.Header>
+                        <Table columns={marksColumns} data={marks} />
+
+                        {/* Total Calculation */}
+                        <div className="border-t border-gray-100 bg-gray-50 px-6 py-4">
+                            <div className="flex justify-between items-center">
+                                <span className="font-medium text-gray-700">Total</span>
+                                <div className="text-right">
+                                    <span className="text-lg font-bold text-blue-600">
+                                        {marks.reduce((sum, m) => sum + (m.ObtainedMarks || 0), 0)}
+                                    </span>
+                                    <span className="text-gray-400">
+                                        {' / '}
+                                        {marks.reduce((sum, m) => sum + (m.AssessmentMaxMarks || 0), 0)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+                )
+            ) : (
+                <Card className="border-0 shadow-sm">
+                    <Card.Body>
+                        <div className="text-center py-12">
+                            <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                            <p className="text-gray-500">
+                                Select a course to view your grades and assessment details
+                            </p>
+                        </div>
+                    </Card.Body>
+                </Card>
+            )}
+
+            {/* Course Performance Overview */}
+            {enrollments.length > 0 && (
+                <Card className="border-0 shadow-sm overflow-hidden">
+                    <Card.Header className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
+                        <Card.Title className="flex items-center gap-2">
+                            <GraduationCap className="w-5 h-5 text-purple-600" />
+                            Enrolled Courses
+                        </Card.Title>
+                    </Card.Header>
+                    <Card.Body>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {enrollments.map((enrollment) => (
+                                <div
+                                    key={enrollment.Id}
+                                    className={`p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${(enrollment.CourseOfferingId?.toString() || enrollment.Id?.toString()) === selectedCourse
+                                        ? 'border-blue-500 bg-blue-50'
+                                        : 'border-gray-200 hover:border-blue-300'
+                                        }`}
+                                    onClick={() => setSelectedCourse(enrollment.CourseOfferingId?.toString() || enrollment.Id?.toString())}
+                                >
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <p className="font-mono text-sm text-blue-600">{enrollment.SubjectCode}</p>
+                                            <p className="font-medium text-gray-900">{enrollment.SubjectName}</p>
+                                        </div>
+                                        <Badge variant="info">Sem {enrollment.Semester || '-'}</Badge>
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
+                                        <span>{enrollment.Credits || 0} Credits</span>
+                                        <span>{enrollment.FacultyName || '-'}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card.Body>
+                </Card>
+            )}
+        </div>
+    )
+}
+
+export default StudentGradesPage

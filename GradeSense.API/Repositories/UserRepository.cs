@@ -27,12 +27,15 @@ public class UserRepository : IUserRepository
 
     public async Task<User?> GetByEmailAsync(string email)
     {
+        // Search in both PersonalEmail and InstitutionalEmail
         return await _context.Users
             .Include(u => u.Faculty)
                 .ThenInclude(f => f.Department)
             .Include(u => u.Student)
                 .ThenInclude(s => s.Department)
-            .FirstOrDefaultAsync(u => u.Email == email && u.DeletedAt == null);
+            .FirstOrDefaultAsync(u => 
+                (u.PersonalEmail == email || u.InstitutionalEmail == email) 
+                && u.DeletedAt == null);
     }
 
     public async Task<(List<User> Users, int TotalCount)> GetAllAsync(UserFilterRequest filter)
@@ -48,7 +51,9 @@ public class UserRepository : IUserRepository
         {
             var searchTerm = filter.SearchTerm.ToLower();
             query = query.Where(u =>
-                u.Email.ToLower().Contains(searchTerm) ||
+                u.PersonalEmail.ToLower().Contains(searchTerm) ||
+                (u.InstitutionalEmail != null && u.InstitutionalEmail.ToLower().Contains(searchTerm)) ||
+                (u.PhoneNumber != null && u.PhoneNumber.Contains(searchTerm)) ||
                 u.FullName.ToLower().Contains(searchTerm));
         }
 
@@ -112,9 +117,33 @@ public class UserRepository : IUserRepository
         return await _context.Users.AnyAsync(u => u.Id == id && u.DeletedAt == null);
     }
 
-    public async Task<bool> EmailExistsAsync(string email, int? excludeUserId = null)
+    public async Task<bool> PersonalEmailExistsAsync(string email, int? excludeUserId = null)
     {
-        var query = _context.Users.Where(u => u.Email == email && u.DeletedAt == null);
+        var query = _context.Users.Where(u => u.PersonalEmail == email && u.DeletedAt == null);
+
+        if (excludeUserId.HasValue)
+        {
+            query = query.Where(u => u.Id != excludeUserId.Value);
+        }
+
+        return await query.AnyAsync();
+    }
+
+    public async Task<bool> InstitutionalEmailExistsAsync(string email, int? excludeUserId = null)
+    {
+        var query = _context.Users.Where(u => u.InstitutionalEmail == email && u.DeletedAt == null);
+
+        if (excludeUserId.HasValue)
+        {
+            query = query.Where(u => u.Id != excludeUserId.Value);
+        }
+
+        return await query.AnyAsync();
+    }
+
+    public async Task<bool> PhoneNumberExistsAsync(string phoneNumber, int? excludeUserId = null)
+    {
+        var query = _context.Users.Where(u => u.PhoneNumber == phoneNumber && u.DeletedAt == null);
 
         if (excludeUserId.HasValue)
         {

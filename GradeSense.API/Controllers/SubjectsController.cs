@@ -9,18 +9,21 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin")]
     public class SubjectsController : ControllerBase
     {
         private readonly ISubjectService _subjectService;
         private readonly ILogger<SubjectsController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public SubjectsController(
             ISubjectService subjectService,
-            ILogger<SubjectsController> logger)
+            ILogger<SubjectsController> logger,
+            IAuditLogger auditLogger)
         {
             _subjectService = subjectService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,9 @@ namespace GradeSense.API.Controllers
             {
                 var subject = await _subjectService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "Subject", subject.Id.ToString(), $"Created subject: {subject.Code}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = subject.Id },
@@ -132,7 +138,17 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldSubject = await _subjectService.GetByIdAsync(id);
+                if (oldSubject == null)
+                {
+                    return NotFound(ApiResponse<SubjectResponse>.ErrorResponse($"Subject with ID {id} not found"));
+                }
+
                 var subject = await _subjectService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("Subject", id.ToString(), oldSubject, subject, $"Updated subject: {subject.Code}");
 
                 return Ok(ApiResponse<SubjectResponse>.SuccessResponse(
                     subject,
@@ -168,6 +184,9 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _subjectService.DeleteAsync(id);
+
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "Subject", id.ToString(), "Deleted subject");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

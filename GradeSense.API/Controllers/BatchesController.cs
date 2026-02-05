@@ -9,18 +9,21 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin")]
     public class BatchesController : ControllerBase
     {
         private readonly IBatchService _batchService;
         private readonly ILogger<BatchesController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public BatchesController(
             IBatchService batchService,
-            ILogger<BatchesController> logger)
+            ILogger<BatchesController> logger,
+            IAuditLogger auditLogger)
         {
             _batchService = batchService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,9 @@ namespace GradeSense.API.Controllers
             {
                 var batch = await _batchService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "Batch", batch.Id.ToString(), $"Created batch: {batch.Name}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = batch.Id },
@@ -132,7 +138,17 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldBatch = await _batchService.GetByIdAsync(id);
+                if (oldBatch == null)
+                {
+                    return NotFound(ApiResponse<BatchResponse>.ErrorResponse($"Batch with ID {id} not found"));
+                }
+
                 var batch = await _batchService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("Batch", id.ToString(), oldBatch, batch, $"Updated batch: {batch.Name}");
 
                 return Ok(ApiResponse<BatchResponse>.SuccessResponse(
                     batch,
@@ -168,6 +184,9 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _batchService.DeleteAsync(id);
+
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "Batch", id.ToString(), "Deleted batch");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

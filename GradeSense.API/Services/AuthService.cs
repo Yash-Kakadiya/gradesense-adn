@@ -94,7 +94,10 @@ namespace GradeSense.API.Services
                 User = new UserResponse
                 {
                     Id = user.Id,
-                    Email = user.Email,
+                    PersonalEmail = user.PersonalEmail,
+                    InstitutionalEmail = user.InstitutionalEmail,
+                    PhoneNumber = user.PhoneNumber,
+                    ProfileImagePath = user.ProfileImagePath,
                     FullName = user.FullName,
                     Role = user.Role,
                     IsActive = user.IsActive,

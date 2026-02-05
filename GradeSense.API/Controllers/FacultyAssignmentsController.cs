@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin,Faculty")]
+    [Authorize(Roles = "Admin,Faculty")]
     public class FacultyAssignmentsController : ControllerBase
     {
         private readonly IFacultyAssignmentService _facultyAssignmentService;

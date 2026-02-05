@@ -7,6 +7,8 @@ namespace GradeSense.API.Interfaces.Repositories
     {
         Task<CourseEnrollment?> GetByIdAsync(int id);
         Task<(List<CourseEnrollment> CourseEnrollments, int TotalCount)> GetAllAsync(CourseEnrollmentFilterRequest filter);
+        Task<List<CourseEnrollment>> GetByCourseOfferingIdAsync(int courseOfferingId);
+        Task<CourseEnrollment?> GetByStudentEnrollmentNumberAndCourseOfferingAsync(string enrollmentNumber, int courseOfferingId);
         Task<CourseEnrollment> CreateAsync(CourseEnrollment courseEnrollment);
         Task<CourseEnrollment> UpdateAsync(CourseEnrollment courseEnrollment);
         Task<bool> DeleteAsync(int id);

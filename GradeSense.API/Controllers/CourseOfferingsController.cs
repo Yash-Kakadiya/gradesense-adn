@@ -9,18 +9,21 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin,Faculty")]
+    [Authorize(Roles = "Admin,Faculty")]
     public class CourseOfferingsController : ControllerBase
     {
         private readonly ICourseOfferingService _courseOfferingService;
         private readonly ILogger<CourseOfferingsController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public CourseOfferingsController(
             ICourseOfferingService courseOfferingService,
-            ILogger<CourseOfferingsController> logger)
+            ILogger<CourseOfferingsController> logger,
+            IAuditLogger auditLogger)
         {
             _courseOfferingService = courseOfferingService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,9 @@ namespace GradeSense.API.Controllers
             {
                 var courseOffering = await _courseOfferingService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "CourseOffering", courseOffering.Id.ToString(), $"Created course offering for subject: {courseOffering.SubjectCode}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = courseOffering.Id },
@@ -132,7 +138,17 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldCourseOffering = await _courseOfferingService.GetByIdAsync(id);
+                if (oldCourseOffering == null)
+                {
+                    return NotFound(ApiResponse<CourseOfferingResponse>.ErrorResponse($"Course offering with ID {id} not found"));
+                }
+
                 var courseOffering = await _courseOfferingService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("CourseOffering", id.ToString(), oldCourseOffering, courseOffering, $"Updated course offering");
 
                 return Ok(ApiResponse<CourseOfferingResponse>.SuccessResponse(
                     courseOffering,
@@ -168,6 +184,9 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _courseOfferingService.DeleteAsync(id);
+
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "CourseOffering", id.ToString(), "Deleted course offering");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

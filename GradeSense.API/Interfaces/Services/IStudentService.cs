@@ -11,5 +11,10 @@ namespace GradeSense.API.Interfaces.Services
         Task<StudentResponse> CreateAsync(CreateStudentRequest request);
         Task<StudentResponse> UpdateAsync(int id, UpdateStudentRequest request);
         Task<bool> DeleteAsync(int id);
+
+        // Bulk Operations
+        Task<BulkOperationResponse<StudentResponse>> BulkImportFromCsvAsync(Stream csvStream);
+        Task<byte[]> ExportToCsvAsync(StudentExportFilterRequest filter);
+        Task<byte[]> GetImportTemplateAsync();
     }
 }

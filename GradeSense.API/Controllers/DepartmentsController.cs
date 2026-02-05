@@ -2,6 +2,7 @@
 using GradeSense.API.DTOs.Department.Request;
 using GradeSense.API.DTOs.Department.Response;
 using GradeSense.API.Interfaces.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,18 +10,21 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin")]
     public class DepartmentsController : ControllerBase
     {
         private readonly IDepartmentService _departmentService;
         private readonly ILogger<DepartmentsController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public DepartmentsController(
             IDepartmentService departmentService,
-            ILogger<DepartmentsController> logger)
+            ILogger<DepartmentsController> logger,
+            IAuditLogger auditLogger)
         {
             _departmentService = departmentService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +97,9 @@ namespace GradeSense.API.Controllers
             {
                 var department = await _departmentService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "Department", department.Id.ToString(), $"Created department: {department.Name} ({department.Code})");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = department.Id },
@@ -128,7 +135,17 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldDepartment = await _departmentService.GetByIdAsync(id);
+                if (oldDepartment == null)
+                {
+                    return NotFound(ApiResponse<DepartmentResponse>.ErrorResponse($"Department with ID {id} not found"));
+                }
+
                 var department = await _departmentService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("Department", id.ToString(), oldDepartment, department, $"Updated department: {department.Name}");
 
                 return Ok(ApiResponse<DepartmentResponse>.SuccessResponse(
                     department,
@@ -163,6 +180,9 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _departmentService.DeleteAsync(id);
+
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "Department", id.ToString(), "Deleted department");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

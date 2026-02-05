@@ -75,7 +75,7 @@ namespace GradeSense.API.Services
                 SubjectCoordinatorId = courseOffering.SubjectCoordinatorId,
                 SubjectCoordinatorName = courseOffering.SubjectCoordinator.IdNavigation.FullName,
                 SubjectCoordinatorEmployeeId = courseOffering.SubjectCoordinator.EmployeeId,
-                SubjectCoordinatorEmail = courseOffering.SubjectCoordinator.IdNavigation.Email,
+                SubjectCoordinatorEmail = courseOffering.SubjectCoordinator.IdNavigation.PersonalEmail,
                 AcademicYear = courseOffering.AcademicYear,
                 StartDate = courseOffering.StartDate,
                 EndDate = courseOffering.EndDate,

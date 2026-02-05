@@ -156,5 +156,12 @@ namespace GradeSense.API.Repositories
                 .Where(b => b.DepartmentId == departmentId && b.DeletedAt == null)
                 .CountAsync();
         }
+
+        public async Task<List<Department>> GetAllForLookupAsync()
+        {
+            return await _context.Departments
+                .Where(d => d.DeletedAt == null && d.IsActive)
+                .ToListAsync();
+        }
     }
 }

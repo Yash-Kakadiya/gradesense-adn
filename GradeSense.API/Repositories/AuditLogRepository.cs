@@ -37,8 +37,9 @@ namespace GradeSense.API.Repositories
                     al.Action.ToLower().Contains(searchTerm) ||
                     al.EntityName.ToLower().Contains(searchTerm) ||
                     al.EntityId.ToLower().Contains(searchTerm) ||
-                    al.ActorUser.FullName.ToLower().Contains(searchTerm) ||
-                    al.ActorUser.Email.ToLower().Contains(searchTerm) ||
+                    (al.ActorUser != null && al.ActorUser.FullName.ToLower().Contains(searchTerm)) ||
+                    (al.ActorUser != null && al.ActorUser.PersonalEmail.ToLower().Contains(searchTerm)) ||
+                    (al.ActorUser != null && al.ActorUser.InstitutionalEmail != null && al.ActorUser.InstitutionalEmail.ToLower().Contains(searchTerm)) ||
                     (al.Reason != null && al.Reason.ToLower().Contains(searchTerm)));
             }
 
