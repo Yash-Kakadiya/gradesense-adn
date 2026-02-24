@@ -44,6 +44,7 @@ import {
     User,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 // Department Detail Modal Component
 const DepartmentDetailModal = ({ isOpen, onClose, departmentId }) => {
@@ -405,8 +406,8 @@ const DepartmentsPage = () => {
             deleteModal.close()
             setSelectedDepartments([])
         },
-        onError: () => {
-            toast.error('Failed to delete department')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -484,11 +485,11 @@ const DepartmentsPage = () => {
                 <div className="flex items-center gap-3">
                     <ExportDropdown
                         onExportCsv={async () => {
-                            const blob = await exportDepartmentsToCsv({ isActive: filters.status === 'all' ? null : filters.status === 'active' })
+                            const blob = await exportDepartmentsToCsv({ isActive: statusFilter === '' || statusFilter === 'all' ? undefined : statusFilter === 'active' })
                             downloadBlob(blob, `departments_${new Date().toISOString().split('T')[0]}.csv`)
                         }}
                         onExportExcel={async () => {
-                            const blob = await exportDepartmentsToExcel({ isActive: filters.status === 'all' ? null : filters.status === 'active' })
+                            const blob = await exportDepartmentsToExcel({ isActive: statusFilter === '' || statusFilter === 'all' ? undefined : statusFilter === 'active' })
                             downloadBlob(blob, `departments_${new Date().toISOString().split('T')[0]}.xlsx`)
                         }}
                         className="hidden sm:flex"

@@ -30,12 +30,16 @@ namespace GradeSense.API.Services
             var data = facultyAssignments.Select(fa => new FacultyAssignmentListResponse
             {
                 Id = fa.Id,
+                CourseOfferingId = fa.CourseOfferingId,
                 SubjectCode = fa.CourseOffering.Subject.Code,
                 SubjectName = fa.CourseOffering.Subject.Name,
                 BatchName = fa.CourseOffering.Batch.Name,
+                Semester = fa.CourseOffering.Batch.Semester,
+                AcademicYear = fa.CourseOffering.AcademicYear,
                 FacultyName = fa.Faculty.IdNavigation.FullName,
                 FacultyEmployeeId = fa.Faculty.EmployeeId,
                 Role = fa.Role,
+                IsCoordinator = fa.CourseOffering.SubjectCoordinatorId == fa.FacultyId,
                 AssignmentDate = fa.AssignmentDate,
                 CreatedAt = fa.CreatedAt
             }).ToList();

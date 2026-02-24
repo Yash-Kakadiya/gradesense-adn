@@ -48,6 +48,7 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 // User Detail Modal Component
 const UserDetailModal = ({ isOpen, onClose, userId, onChangePassword }) => {
@@ -446,8 +447,8 @@ const UsersPage = () => {
             deleteModal.close()
             setSelectedUsers([])
         },
-        onError: () => {
-            toast.error('Failed to delete user')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -460,8 +461,8 @@ const UsersPage = () => {
             queryClient.invalidateQueries(['users'])
             queryClient.invalidateQueries(['admin-dashboard-stats'])
         },
-        onError: () => {
-            toast.error('Failed to update user status')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 

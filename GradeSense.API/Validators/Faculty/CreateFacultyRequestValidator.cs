@@ -13,8 +13,8 @@ namespace GradeSense.API.Validators.Faculty
             RuleFor(x => x.EmployeeId)
                 .NotEmpty().WithMessage("Employee ID is required")
                 .MaximumLength(255).WithMessage("Employee ID cannot exceed 255 characters")
-                .Matches(@"^[A-Z0-9-]+$")
-                .WithMessage("Employee ID must contain only uppercase letters, numbers, and hyphens");
+                .Matches(@"^[A-Za-z0-9-]+$")
+                .WithMessage("Employee ID must contain only letters, numbers, and hyphens");
 
             RuleFor(x => x.DepartmentId)
                 .GreaterThan(0).WithMessage("Department ID must be greater than 0");
@@ -24,7 +24,7 @@ namespace GradeSense.API.Validators.Faculty
                 .When(x => !string.IsNullOrEmpty(x.Designation));
 
             RuleFor(x => x.JoiningDate)
-                .LessThanOrEqualTo(DateOnly.FromDateTime(DateTime.Now))
+                .Must(date => date <= DateOnly.FromDateTime(DateTime.Now))
                 .WithMessage("Joining date cannot be in the future")
                 .When(x => x.JoiningDate.HasValue);
 

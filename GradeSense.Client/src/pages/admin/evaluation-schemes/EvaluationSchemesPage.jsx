@@ -29,6 +29,7 @@ import { Card, Button, ExportDropdown } from '@/components/common'
 import { Table, Pagination, ConfirmDialog } from '@/components/common'
 import { ROUTES } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useModal, useDebounce, usePagination } from '@/hooks'
 import EvaluationSchemeDetailModal from '@/components/evaluation-schemes/EvaluationSchemeDetailModal'
 
@@ -134,7 +135,7 @@ const EvaluationSchemesPage = () => {
             deleteModal.close()
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to delete evaluation scheme')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -157,8 +158,8 @@ const EvaluationSchemesPage = () => {
     // Export to CSV
     const handleExportCsv = async () => {
         const blob = await exportEvaluationSchemesToCsv({
-            courseOfferingId: courseOfferingFilter ? parseInt(courseOfferingFilter) : null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            courseOfferingId: courseOfferingFilter ? parseInt(courseOfferingFilter) : undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `evaluation_schemes_export_${new Date().toISOString().split('T')[0]}.csv`)
     }
@@ -166,8 +167,8 @@ const EvaluationSchemesPage = () => {
     // Export to Excel
     const handleExportExcel = async () => {
         const blob = await exportEvaluationSchemesToExcel({
-            courseOfferingId: courseOfferingFilter ? parseInt(courseOfferingFilter) : null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            courseOfferingId: courseOfferingFilter ? parseInt(courseOfferingFilter) : undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `evaluation_schemes_export_${new Date().toISOString().split('T')[0]}.xlsx`)
     }

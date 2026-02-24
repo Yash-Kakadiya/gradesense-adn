@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { API_URL } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { parseApiError } from '@/utils/errorHandler'
 
 // Create axios instance
 const api = axios.create({
@@ -31,38 +32,51 @@ api.interceptors.response.use(
         return response.data
     },
     (error) => {
-        const { response } = error
+        const parsed = parseApiError(error)
 
-        if (response) {
-            switch (response.status) {
-                case 401:
-                    // Unauthorized - clear token and redirect to login
-                    localStorage.removeItem('token')
-                    localStorage.removeItem('user')
-                    if (window.location.pathname !== '/login') {
-                        window.location.href = '/login'
-                        toast.error('Session expired. Please login again.')
-                    }
-                    break
-                case 403:
-                    toast.error('You do not have permission to perform this action.')
-                    break
-                case 404:
-                    toast.error('The requested resource was not found.')
-                    break
-                case 422:
-                    // Validation errors - handled by the calling component
-                    break
-                case 500:
-                    toast.error('An unexpected server error occurred.')
-                    break
-                default:
-                    toast.error(response.data?.message || 'An error occurred.')
+        // Handle specific error types
+        if (parsed.isAuthError && error?.response?.status === 401) {
+            // Unauthorized - clear token and redirect to login
+            localStorage.removeItem('token')
+            localStorage.removeItem('user')
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login'
+                toast.error(parsed.message)
             }
-        } else if (error.request) {
-            toast.error('Unable to connect to the server. Please check your connection.')
-        } else {
-            toast.error('An unexpected error occurred.')
+            return Promise.reject(error)
+        }
+
+        if (parsed.isAuthError && error?.response?.status === 403) {
+            toast.error(parsed.message)
+            return Promise.reject(error)
+        }
+
+        // For validation errors (400, 422), don't show toast here
+        // Let the component handle it for better UX
+        if (parsed.isValidationError) {
+            return Promise.reject(error)
+        }
+
+        // Network errors
+        if (parsed.isNetworkError) {
+            toast.error(parsed.message)
+            return Promise.reject(error)
+        }
+
+        // Server errors (500+)
+        if (error?.response?.status >= 500) {
+            toast.error(parsed.message)
+            return Promise.reject(error)
+        }
+
+        // For 404, don't show toast automatically - let component decide
+        if (error?.response?.status === 404) {
+            return Promise.reject(error)
+        }
+
+        // Other errors - show generic message
+        if (error?.response?.status && error.response.status !== 400 && error.response.status !== 422) {
+            toast.error(parsed.message)
         }
 
         return Promise.reject(error)

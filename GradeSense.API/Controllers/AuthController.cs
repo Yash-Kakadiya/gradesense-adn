@@ -45,8 +45,8 @@ namespace GradeSense.API.Controllers
                 // Log successful login
                 _logger.LogInformation("User {Email} logged in successfully", request.Email);
 
-                // Create audit log for successful login
-                await _auditLogger.LogAsync("Login", "User", result.User.Id.ToString(), $"{result.User.Role} logged in");
+                // Create audit log for successful login using the actual user's ID
+                await _auditLogger.LogWithActorAsync("Login", "User", result.User.Id.ToString(), result.User.Id, $"{result.User.Role} logged in");
 
                 return Ok(ApiResponse<LoginResponse>.SuccessResponse(
                     result,

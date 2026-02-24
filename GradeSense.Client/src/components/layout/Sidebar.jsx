@@ -23,10 +23,13 @@ import {
     Shield,
     Briefcase,
     User,
-    Sparkles,
+    UserPlus,
+    Circle,
     Zap,
     PanelLeftClose,
     PanelLeft,
+    AlertTriangle,
+    Target,
 } from 'lucide-react'
 
 // Navigation configuration by role with sections
@@ -88,13 +91,29 @@ const navigationConfig = {
                 title: 'Teaching',
                 items: [
                     { to: ROUTES.FACULTY_COURSES, icon: BookOpen, label: 'My Courses' },
-                    { to: ROUTES.FACULTY_GRADES, icon: ClipboardCheck, label: 'Grades' },
-                    { to: ROUTES.FACULTY_ATTENDANCE, icon: Calendar, label: 'Attendance' },
+                    { to: ROUTES.FACULTY_STUDENTS, icon: GraduationCap, label: 'My Students' },
+                    { to: ROUTES.FACULTY_ALL_STUDENTS, icon: Users, label: 'All Students' },
+                    { to: ROUTES.FACULTY_ENROLLMENTS, icon: UserPlus, label: 'Enrollments' },
+                    { to: ROUTES.FACULTY_SUBJECT_UNITS, icon: Layers, label: 'Subject Units' },
+                ]
+            },
+            {
+                title: 'Grading',
+                items: [
+                    { to: ROUTES.FACULTY_ASSESSMENTS, icon: ClipboardList, label: 'Assessments' },
+                    { to: ROUTES.FACULTY_GRADES, icon: ClipboardCheck, label: 'Grade Entry' },
+                ]
+            },
+            {
+                title: 'Attendance',
+                items: [
+                    { to: ROUTES.FACULTY_ATTENDANCE, icon: Calendar, label: 'Mark Attendance' },
                 ]
             },
             {
                 title: 'Analytics',
                 items: [
+                    { to: ROUTES.FACULTY_AT_RISK, icon: AlertTriangle, label: 'At-Risk Students' },
                     { to: ROUTES.FACULTY_REPORTS, icon: BarChart3, label: 'Reports' },
                 ]
             },
@@ -274,9 +293,7 @@ const NavSection = ({ title, items, colorTheme, isOpen, onToggle, closeSidebar, 
                             </span>
                             <span className="flex-1">{item.label}</span>
                             {isActive && (
-                                <span className="flex items-center gap-1">
-                                    <Sparkles className={cn('w-3.5 h-3.5', colors.text, 'animate-pulse')} />
-                                </span>
+                                <span className={cn('w-2 h-2 rounded-full', colors.bg)} />
                             )}
                         </NavLink>
                     )

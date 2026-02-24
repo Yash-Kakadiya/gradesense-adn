@@ -23,6 +23,7 @@ import {
     GraduationCap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -69,9 +70,9 @@ const BatchFormPage = () => {
     // Fetch faculties for class coordinator dropdown
     const { data: facultiesData, isLoading: isFacultiesLoading } = useQuery({
         queryKey: ['faculties-select', watchedValues.departmentId],
-        queryFn: () => facultyService.getAll({ 
-            pageSize: 500, 
-            departmentId: watchedValues.departmentId || undefined 
+        queryFn: () => facultyService.getAll({
+            pageSize: 500,
+            departmentId: watchedValues.departmentId || undefined
         }),
     })
 
@@ -138,8 +139,7 @@ const BatchFormPage = () => {
             navigate(ROUTES.ADMIN_BATCHES)
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || `Failed to ${isEditMode ? 'update' : 'create'} batch`
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -400,7 +400,7 @@ const BatchFormPage = () => {
                                     ))}
                                 </select>
                                 <p className="mt-1.5 text-xs text-gray-500">
-                                    {watchedValues.departmentId 
+                                    {watchedValues.departmentId
                                         ? 'Select a faculty member as class coordinator (optional)'
                                         : 'Select a department first to see available faculty members'}
                                 </p>

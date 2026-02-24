@@ -13,6 +13,7 @@ namespace GradeSense.API.Services
         private readonly IEvaluationSchemeRepository _evaluationSchemeRepository;
         private readonly ISubjectUnitRepository _subjectUnitRepository;
         private readonly IFacultyRepository _facultyRepository;
+        private readonly IStudentMarkRepository _studentMarkRepository;
         private readonly ILogger<AssessmentItemService> _logger;
 
         public AssessmentItemService(
@@ -20,12 +21,14 @@ namespace GradeSense.API.Services
             IEvaluationSchemeRepository evaluationSchemeRepository,
             ISubjectUnitRepository subjectUnitRepository,
             IFacultyRepository facultyRepository,
+            IStudentMarkRepository studentMarkRepository,
             ILogger<AssessmentItemService> logger)
         {
             _assessmentItemRepository = assessmentItemRepository;
             _evaluationSchemeRepository = evaluationSchemeRepository;
             _subjectUnitRepository = subjectUnitRepository;
             _facultyRepository = facultyRepository;
+            _studentMarkRepository = studentMarkRepository;
             _logger = logger;
         }
 
@@ -36,10 +39,14 @@ namespace GradeSense.API.Services
             var data = assessmentItems.Select(ai => new AssessmentItemListResponse
             {
                 Id = ai.Id,
+                EvaluationSchemeId = ai.EvaluationSchemeId,
                 EvaluationSchemeName = ai.EvaluationScheme.Name,
                 SubjectCode = ai.EvaluationScheme.CourseOffering.Subject.Code,
+                SubjectName = ai.EvaluationScheme.CourseOffering.Subject.Name,
                 Name = ai.Name,
+                Description = ai.Description,
                 MaxMarks = ai.MaxMarks,
+                Weight = ai.Weight,
                 CalculationType = ai.CalculationType,
                 ScheduledDate = ai.ScheduledDate,
                 DueDate = ai.DueDate,
@@ -256,12 +263,12 @@ namespace GradeSense.API.Services
             if (!await _assessmentItemRepository.ExistsAsync(id))
                 throw new KeyNotFoundException("Assessment item not found");
 
-            // Check if assessment item has any student marks
-            var studentMarksCount = await _assessmentItemRepository.GetStudentMarksCountAsync(id);
-            if (studentMarksCount > 0)
-                throw new InvalidOperationException($"Cannot delete assessment item that has {studentMarksCount} student mark(s)");
+            // Cascade delete student marks
+            var deletedMarks = await _studentMarkRepository.DeleteByAssessmentItemIdAsync(id);
+            if (deletedMarks > 0)
+                _logger.LogInformation("Cascade deleted {Count} student mark(s) for assessment item {AssessmentItemId}", deletedMarks, id);
 
-            // Check if assessment item has any upload histories
+            // Check if assessment item has any upload histories (don't cascade delete, these are logs)
             var uploadHistoriesCount = await _assessmentItemRepository.GetUploadHistoriesCountAsync(id);
             if (uploadHistoriesCount > 0)
                 throw new InvalidOperationException($"Cannot delete assessment item that has {uploadHistoriesCount} upload history/histories");

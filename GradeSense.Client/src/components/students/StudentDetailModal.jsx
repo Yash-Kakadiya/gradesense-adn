@@ -24,7 +24,7 @@ import { cn } from '@/utils/helpers'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
-const StudentDetailModal = ({ isOpen, onClose, studentId }) => {
+const StudentDetailModal = ({ isOpen, onClose, studentId, showEditButton = true }) => {
     const navigate = useNavigate()
 
     // Fetch full student details when modal opens
@@ -78,17 +78,19 @@ const StudentDetailModal = ({ isOpen, onClose, studentId }) => {
                                         <div className="relative bg-gradient-to-br from-emerald-500 to-teal-600 px-6 py-5">
                                             {/* Action buttons */}
                                             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        handleClose()
-                                                        navigate(`${ROUTES.ADMIN_STUDENTS}/${student.Id}/edit`)
-                                                    }}
-                                                    className="p-2 rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors group"
-                                                    title="Edit Student"
-                                                >
-                                                    <Edit className="w-5 h-5" />
-                                                </button>
+                                                {showEditButton && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            handleClose()
+                                                            navigate(`${ROUTES.ADMIN_STUDENTS}/${student.Id}/edit`)
+                                                        }}
+                                                        className="p-2 rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors group"
+                                                        title="Edit Student"
+                                                    >
+                                                        <Edit className="w-5 h-5" />
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     onClick={handleClose}

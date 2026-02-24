@@ -46,6 +46,7 @@ import {
     BarChart3,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -410,8 +411,8 @@ const StudentsPage = () => {
             deleteModal.close()
             setSelectedStudents([])
         },
-        onError: () => {
-            toast.error('Failed to delete student')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 

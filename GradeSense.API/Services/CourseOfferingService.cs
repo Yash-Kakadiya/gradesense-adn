@@ -14,6 +14,7 @@ namespace GradeSense.API.Services
         private readonly ISubjectRepository _subjectRepository;
         private readonly IBatchRepository _batchRepository;
         private readonly IFacultyRepository _facultyRepository;
+        private readonly IFacultyAssignmentRepository _facultyAssignmentRepository;
         private readonly ILogger<CourseOfferingService> _logger;
 
         public CourseOfferingService(
@@ -21,12 +22,14 @@ namespace GradeSense.API.Services
             ISubjectRepository subjectRepository,
             IBatchRepository batchRepository,
             IFacultyRepository facultyRepository,
+            IFacultyAssignmentRepository facultyAssignmentRepository,
             ILogger<CourseOfferingService> logger)
         {
             _courseOfferingRepository = courseOfferingRepository;
             _subjectRepository = subjectRepository;
             _batchRepository = batchRepository;
             _facultyRepository = facultyRepository;
+            _facultyAssignmentRepository = facultyAssignmentRepository;
             _logger = logger;
         }
 
@@ -144,6 +147,29 @@ namespace GradeSense.API.Services
 
             await _courseOfferingRepository.CreateAsync(courseOffering);
 
+            // Auto-create FacultyAssignment for the coordinator
+            if (courseOffering.SubjectCoordinatorId > 0)
+            {
+                var alreadyAssigned = await _facultyAssignmentRepository.FacultyAlreadyAssignedAsync(
+                    courseOffering.Id, courseOffering.SubjectCoordinatorId);
+                
+                if (!alreadyAssigned)
+                {
+                    var facultyAssignment = new FacultyAssignment
+                    {
+                        CourseOfferingId = courseOffering.Id,
+                        FacultyId = courseOffering.SubjectCoordinatorId,
+                        Role = "Coordinator",
+                        AssignmentDate = DateTime.Now,
+                        CreatedAt = DateTime.Now
+                    };
+                    await _facultyAssignmentRepository.CreateAsync(facultyAssignment);
+                    _logger.LogInformation(
+                        "Auto-created FacultyAssignment for coordinator {FacultyId} on CourseOffering {CourseId}",
+                        courseOffering.SubjectCoordinatorId, courseOffering.Id);
+                }
+            }
+
             // Reload with navigation properties
             courseOffering = await _courseOfferingRepository.GetByIdAsync(courseOffering.Id);
 
@@ -224,6 +250,29 @@ namespace GradeSense.API.Services
                 courseOffering.IsActive = request.IsActive.Value;
 
             await _courseOfferingRepository.UpdateAsync(courseOffering);
+
+            // Auto-create FacultyAssignment if coordinator is set and not already assigned
+            if (request.SubjectCoordinatorId.HasValue && request.SubjectCoordinatorId.Value > 0)
+            {
+                var alreadyAssigned = await _facultyAssignmentRepository.FacultyAlreadyAssignedAsync(
+                    id, request.SubjectCoordinatorId.Value);
+                
+                if (!alreadyAssigned)
+                {
+                    var facultyAssignment = new FacultyAssignment
+                    {
+                        CourseOfferingId = id,
+                        FacultyId = request.SubjectCoordinatorId.Value,
+                        Role = "Coordinator",
+                        AssignmentDate = DateTime.Now,
+                        CreatedAt = DateTime.Now
+                    };
+                    await _facultyAssignmentRepository.CreateAsync(facultyAssignment);
+                    _logger.LogInformation(
+                        "Auto-created FacultyAssignment for coordinator {FacultyId} on CourseOffering {CourseId}",
+                        request.SubjectCoordinatorId.Value, id);
+                }
+            }
 
             // Reload with navigation properties
             courseOffering = await _courseOfferingRepository.GetByIdAsync(id);

@@ -52,6 +52,19 @@ namespace GradeSense.API.Repositories
                 query = query.Where(es => es.CourseOfferingId == filter.CourseOfferingId.Value);
             }
 
+            // Filter by multiple course offering IDs
+            if (!string.IsNullOrWhiteSpace(filter.CourseOfferingIds))
+            {
+                var ids = filter.CourseOfferingIds.Split(',')
+                    .Select(s => int.TryParse(s.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0)
+                    .ToList();
+                if (ids.Count > 0)
+                {
+                    query = query.Where(es => ids.Contains(es.CourseOfferingId));
+                }
+            }
+
             if (filter.SubjectId.HasValue)
             {
                 query = query.Where(es => es.CourseOffering.SubjectId == filter.SubjectId.Value);

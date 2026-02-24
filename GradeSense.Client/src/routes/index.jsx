@@ -42,9 +42,16 @@ const AuditLogsPage = lazy(() => import('@/pages/admin/audit-logs/AuditLogsPage'
 // Faculty pages
 const FacultyDashboard = lazy(() => import('@/pages/faculty/FacultyDashboard'))
 const FacultyCoursesPage = lazy(() => import('@/pages/faculty/FacultyCoursesPage'))
+const FacultyStudentsPage = lazy(() => import('@/pages/faculty/FacultyStudentsPage'))
+const FacultyAllStudentsPage = lazy(() => import('@/pages/faculty/FacultyAllStudentsPage'))
+const FacultyEnrollmentsPage = lazy(() => import('@/pages/faculty/FacultyEnrollmentsPage'))
+const FacultySubjectUnitsPage = lazy(() => import('@/pages/faculty/FacultySubjectUnitsPage'))
+const FacultyAssessmentsPage = lazy(() => import('@/pages/faculty/FacultyAssessmentsPage'))
 const FacultyGradesPage = lazy(() => import('@/pages/faculty/FacultyGradesPage'))
 const FacultyAttendancePage = lazy(() => import('@/pages/faculty/FacultyAttendancePage'))
+const FacultyAtRiskPage = lazy(() => import('@/pages/faculty/FacultyAtRiskPage'))
 const FacultyReportsPage = lazy(() => import('@/pages/faculty/FacultyReportsPage'))
+const FacultyProfilePage = lazy(() => import('@/pages/faculty/FacultyProfilePage'))
 
 // Student pages
 const StudentDashboard = lazy(() => import('@/pages/student/StudentDashboard'))
@@ -315,10 +322,58 @@ export const router = createBrowserRouter([
                                         ),
                                     },
                                     {
+                                        path: ROUTES.FACULTY_PROFILE,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyProfilePage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
                                         path: ROUTES.FACULTY_COURSES,
                                         element: (
                                             <SuspenseWrapper>
                                                 <FacultyCoursesPage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.FACULTY_STUDENTS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyStudentsPage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.FACULTY_ALL_STUDENTS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyAllStudentsPage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.FACULTY_ENROLLMENTS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyEnrollmentsPage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.FACULTY_SUBJECT_UNITS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultySubjectUnitsPage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.FACULTY_ASSESSMENTS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyAssessmentsPage />
                                             </SuspenseWrapper>
                                         ),
                                     },
@@ -335,6 +390,14 @@ export const router = createBrowserRouter([
                                         element: (
                                             <SuspenseWrapper>
                                                 <FacultyAttendancePage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.FACULTY_AT_RISK,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyAtRiskPage />
                                             </SuspenseWrapper>
                                         ),
                                     },

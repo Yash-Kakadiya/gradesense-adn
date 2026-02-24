@@ -31,6 +31,7 @@ namespace GradeSense.API.Controllers
         /// Get all departments with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<DepartmentResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<DepartmentResponse>>>> GetAll(
             [FromQuery] DepartmentFilterRequest filter)
@@ -56,6 +57,7 @@ namespace GradeSense.API.Controllers
         /// Get department by ID
         /// </summary>
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<DepartmentDetailResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<DepartmentDetailResponse>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<DepartmentDetailResponse>>> GetById(int id)

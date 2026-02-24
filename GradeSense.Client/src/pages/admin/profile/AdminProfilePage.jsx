@@ -27,6 +27,7 @@ import {
     UserX,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -425,8 +426,7 @@ const AdminProfilePage = () => {
             queryClient.invalidateQueries(['user-profile', authUser?.id])
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || 'Failed to update profile'
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -437,8 +437,8 @@ const AdminProfilePage = () => {
             toast.success('Profile image updated')
             refetch()
         },
-        onError: () => {
-            toast.error('Failed to upload image')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 

@@ -24,7 +24,7 @@ import {
     UserCheck,
     Layers,
     LayoutDashboard,
-    Sparkles,
+    TrendingUp,
     Zap,
     Clock,
     ArrowUpRight,
@@ -86,7 +86,7 @@ const GradientStatCard = ({ title, value, icon: Icon, gradient, subtitle, onClic
                     <p className="text-sm font-medium text-white/80">{title}</p>
                     {subtitle && (
                         <p className="text-xs text-white/60 mt-2 flex items-center gap-1">
-                            <Sparkles className="w-3 h-3" />
+                            <TrendingUp className="w-3 h-3" />
                             {subtitle}
                         </p>
                     )}
@@ -219,7 +219,7 @@ const AdminDashboard = () => {
                         <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 via-gray-700 to-gray-900 bg-clip-text text-transparent">
                             Admin Dashboard
                         </h1>
-                        <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
+                        <LayoutDashboard className="w-5 h-5 text-indigo-500" />
                     </div>
                     <p className="text-gray-500 ml-14">
                         Welcome back! Here's what's happening in your system today.

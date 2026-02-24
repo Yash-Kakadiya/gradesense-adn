@@ -18,11 +18,12 @@ import {
     Calendar,
     AlertCircle,
     Loader2,
-    Sparkles,
+    Eye,
     BookOpen,
     Award,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -152,8 +153,7 @@ const StudentFormPage = () => {
             navigate(ROUTES.ADMIN_STUDENTS)
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || `Failed to ${isEditMode ? 'update' : 'create'} student`
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -467,7 +467,7 @@ const StudentFormPage = () => {
                 <Card className="border-0 shadow-lg overflow-hidden">
                     <div className="bg-gradient-to-r from-gray-700 to-gray-900 px-6 py-4">
                         <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                            <Sparkles className="w-5 h-5" />
+                            <Eye className="w-5 h-5" />
                             Preview
                         </h2>
                     </div>

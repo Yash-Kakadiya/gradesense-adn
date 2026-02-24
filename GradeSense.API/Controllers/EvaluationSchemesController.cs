@@ -14,13 +14,16 @@ namespace GradeSense.API.Controllers
     {
         private readonly IEvaluationSchemeService _evaluationSchemeService;
         private readonly ILogger<EvaluationSchemesController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public EvaluationSchemesController(
             IEvaluationSchemeService evaluationSchemeService,
-            ILogger<EvaluationSchemesController> logger)
+            ILogger<EvaluationSchemesController> logger,
+            IAuditLogger auditLogger)
         {
             _evaluationSchemeService = evaluationSchemeService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,10 @@ namespace GradeSense.API.Controllers
             {
                 var evaluationScheme = await _evaluationSchemeService.CreateAsync(request);
 
+                // Create audit log
+                await _auditLogger.LogAsync("Create", "EvaluationScheme", evaluationScheme.Id.ToString(), 
+                    $"Created evaluation scheme: {evaluationScheme.Name} for course offering {evaluationScheme.CourseOfferingId}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = evaluationScheme.Id },
@@ -132,7 +139,18 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                // Get old data for audit trail
+                var oldEvaluationScheme = await _evaluationSchemeService.GetByIdAsync(id);
+                if (oldEvaluationScheme == null)
+                {
+                    return NotFound(ApiResponse<EvaluationSchemeResponse>.ErrorResponse($"Evaluation scheme with ID {id} not found"));
+                }
+
                 var evaluationScheme = await _evaluationSchemeService.UpdateAsync(id, request);
+
+                // Create audit log with change tracking
+                await _auditLogger.LogUpdateAsync("EvaluationScheme", id.ToString(), oldEvaluationScheme, evaluationScheme, 
+                    $"Updated evaluation scheme: {evaluationScheme.Name}");
 
                 return Ok(ApiResponse<EvaluationSchemeResponse>.SuccessResponse(
                     evaluationScheme,
@@ -168,6 +186,9 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _evaluationSchemeService.DeleteAsync(id);
+
+                // Create audit log
+                await _auditLogger.LogAsync("Delete", "EvaluationScheme", id.ToString(), "Deleted evaluation scheme");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

@@ -165,7 +165,9 @@ public class DashboardController : ControllerBase
     {
         try
         {
-            var userIdClaim = User.FindFirst("userId")?.Value;
+            // Get user ID from JWT claims - check multiple claim types for compatibility
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                           ?? User.FindFirst("sub")?.Value;
             var roleClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
 
             if (string.IsNullOrEmpty(userIdClaim))

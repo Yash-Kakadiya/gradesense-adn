@@ -420,6 +420,7 @@ public class DashboardService : IDashboardService
                 SubjectCode = co.Subject.Code,
                 SubjectName = co.Subject.Name,
                 BatchName = co.Batch.Name,
+                Semester = co.Batch.Semester,
                 AcademicYear = co.AcademicYear,
                 EnrolledStudents = enrolledStudents.Count,
                 PendingGrades = Math.Max(0, pendingGrades),

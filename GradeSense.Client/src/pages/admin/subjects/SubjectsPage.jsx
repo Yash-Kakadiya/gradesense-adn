@@ -28,6 +28,7 @@ import { Card, Button, ExportDropdown } from '@/components/common'
 import { Table, Pagination, ConfirmDialog } from '@/components/common'
 import { ROUTES } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useModal, useDebounce, usePagination } from '@/hooks'
 import SubjectDetailModal from '@/components/subjects/SubjectDetailModal'
 
@@ -115,7 +116,7 @@ const SubjectsPage = () => {
             deleteModal.close()
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to delete subject')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -138,8 +139,8 @@ const SubjectsPage = () => {
     // Export to CSV
     const handleExportCsv = async () => {
         const blob = await exportSubjectsToCsv({
-            departmentId: departmentFilter ? parseInt(departmentFilter) : null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            departmentId: departmentFilter ? parseInt(departmentFilter) : undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `subjects_export_${new Date().toISOString().split('T')[0]}.csv`)
     }
@@ -147,8 +148,8 @@ const SubjectsPage = () => {
     // Export to Excel
     const handleExportExcel = async () => {
         const blob = await exportSubjectsToExcel({
-            departmentId: departmentFilter ? parseInt(departmentFilter) : null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            departmentId: departmentFilter ? parseInt(departmentFilter) : undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `subjects_export_${new Date().toISOString().split('T')[0]}.xlsx`)
     }

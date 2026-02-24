@@ -12,17 +12,26 @@ namespace GradeSense.API.Services
         private readonly ICourseEnrollmentRepository _courseEnrollmentRepository;
         private readonly ICourseOfferingRepository _courseOfferingRepository;
         private readonly IStudentRepository _studentRepository;
+        private readonly IStudentMarkRepository _studentMarkRepository;
+        private readonly IAttendanceRecordRepository _attendanceRecordRepository;
+        private readonly IPredictionRepository _predictionRepository;
         private readonly ILogger<CourseEnrollmentService> _logger;
 
         public CourseEnrollmentService(
             ICourseEnrollmentRepository courseEnrollmentRepository,
             ICourseOfferingRepository courseOfferingRepository,
             IStudentRepository studentRepository,
+            IStudentMarkRepository studentMarkRepository,
+            IAttendanceRecordRepository attendanceRecordRepository,
+            IPredictionRepository predictionRepository,
             ILogger<CourseEnrollmentService> logger)
         {
             _courseEnrollmentRepository = courseEnrollmentRepository;
             _courseOfferingRepository = courseOfferingRepository;
             _studentRepository = studentRepository;
+            _studentMarkRepository = studentMarkRepository;
+            _attendanceRecordRepository = attendanceRecordRepository;
+            _predictionRepository = predictionRepository;
             _logger = logger;
         }
 
@@ -33,12 +42,17 @@ namespace GradeSense.API.Services
             var data = courseEnrollments.Select(ce => new CourseEnrollmentListResponse
             {
                 Id = ce.Id,
+                StudentId = ce.StudentId,
+                CourseOfferingId = ce.CourseOfferingId,
                 SubjectCode = ce.CourseOffering.Subject.Code,
                 SubjectName = ce.CourseOffering.Subject.Name,
                 BatchName = ce.CourseOffering.Batch.Name,
                 StudentName = ce.Student.IdNavigation.FullName,
                 EnrollmentNumber = ce.Student.EnrollmentNumber,
                 RollNumber = ce.RollNumber,
+                PersonalEmail = ce.Student.IdNavigation.PersonalEmail,
+                PhoneNumber = ce.Student.IdNavigation.PhoneNumber,
+                EnrollmentDate = ce.EnrollmentDate,
                 Status = ce.Status,
                 AttendancePercentage = ce.AttendancePercentage,
                 Grade = ce.Grade,
@@ -155,6 +169,8 @@ namespace GradeSense.API.Services
                 StudentName = courseEnrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = courseEnrollment.Student.EnrollmentNumber,
                 RollNumber = courseEnrollment.RollNumber,
+                PersonalEmail = courseEnrollment.Student.IdNavigation.PersonalEmail,
+                PhoneNumber = courseEnrollment.Student.IdNavigation.PhoneNumber,
                 EnrollmentDate = courseEnrollment.EnrollmentDate,
                 Status = courseEnrollment.Status,
                 AttendancePercentage = courseEnrollment.AttendancePercentage,
@@ -206,6 +222,8 @@ namespace GradeSense.API.Services
                 StudentName = courseEnrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = courseEnrollment.Student.EnrollmentNumber,
                 RollNumber = courseEnrollment.RollNumber,
+                PersonalEmail = courseEnrollment.Student.IdNavigation.PersonalEmail,
+                PhoneNumber = courseEnrollment.Student.IdNavigation.PhoneNumber,
                 EnrollmentDate = courseEnrollment.EnrollmentDate,
                 Status = courseEnrollment.Status,
                 AttendancePercentage = courseEnrollment.AttendancePercentage,
@@ -216,25 +234,91 @@ namespace GradeSense.API.Services
             };
         }
 
+        public async Task<BulkEnrollResponse> BulkEnrollAsync(BulkEnrollRequest request)
+        {
+            var response = new BulkEnrollResponse
+            {
+                TotalRequested = request.StudentIds.Count
+            };
+
+            // Validate CourseOffering exists
+            var courseOffering = await _courseOfferingRepository.GetByIdAsync(request.CourseOfferingId);
+            if (courseOffering == null)
+            {
+                response.Errors.Add("Course offering not found");
+                response.FailedEnrollments = request.StudentIds.Count;
+                return response;
+            }
+
+            if (!courseOffering.IsActive)
+            {
+                response.Errors.Add("Course offering is not active");
+                response.FailedEnrollments = request.StudentIds.Count;
+                return response;
+            }
+
+            foreach (var studentId in request.StudentIds)
+            {
+                try
+                {
+                    // Check if student exists
+                    if (!await _studentRepository.ExistsAsync(studentId))
+                    {
+                        response.Errors.Add($"Student ID {studentId} not found");
+                        response.FailedEnrollments++;
+                        continue;
+                    }
+
+                    // Check if student already enrolled
+                    if (await _courseEnrollmentRepository.StudentAlreadyEnrolledAsync(request.CourseOfferingId, studentId))
+                    {
+                        response.Errors.Add($"Student ID {studentId} already enrolled");
+                        response.FailedEnrollments++;
+                        continue;
+                    }
+
+                    // Create enrollment
+                    var enrollment = new CourseEnrollment
+                    {
+                        CourseOfferingId = request.CourseOfferingId,
+                        StudentId = studentId,
+                        EnrollmentDate = DateTime.Now,
+                        Status = "Active"
+                    };
+
+                    await _courseEnrollmentRepository.CreateAsync(enrollment);
+                    response.SuccessfulEnrollments++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error enrolling student {StudentId}", studentId);
+                    response.Errors.Add($"Error enrolling student ID {studentId}: {ex.Message}");
+                    response.FailedEnrollments++;
+                }
+            }
+
+            return response;
+        }
+
         public async Task<bool> DeleteAsync(int id)
         {
             if (!await _courseEnrollmentRepository.ExistsAsync(id))
                 throw new KeyNotFoundException("Course enrollment not found");
 
-            // Check if enrollment has any student marks
-            var studentMarksCount = await _courseEnrollmentRepository.GetStudentMarksCountAsync(id);
-            if (studentMarksCount > 0)
-                throw new InvalidOperationException($"Cannot delete enrollment that has {studentMarksCount} student mark(s)");
+            // Cascade delete student marks
+            var deletedMarks = await _studentMarkRepository.DeleteByEnrollmentIdAsync(id);
+            if (deletedMarks > 0)
+                _logger.LogInformation("Cascade deleted {Count} student mark(s) for enrollment {EnrollmentId}", deletedMarks, id);
 
-            // Check if enrollment has any attendance records
-            var attendanceRecordsCount = await _courseEnrollmentRepository.GetAttendanceRecordsCountAsync(id);
-            if (attendanceRecordsCount > 0)
-                throw new InvalidOperationException($"Cannot delete enrollment that has {attendanceRecordsCount} attendance record(s)");
+            // Cascade delete attendance records
+            var deletedAttendance = await _attendanceRecordRepository.DeleteByEnrollmentIdAsync(id);
+            if (deletedAttendance > 0)
+                _logger.LogInformation("Cascade deleted {Count} attendance record(s) for enrollment {EnrollmentId}", deletedAttendance, id);
 
-            // Check if enrollment has any predictions
-            var predictionsCount = await _courseEnrollmentRepository.GetPredictionsCountAsync(id);
-            if (predictionsCount > 0)
-                throw new InvalidOperationException($"Cannot delete enrollment that has {predictionsCount} prediction(s)");
+            // Cascade delete predictions
+            var deletedPredictions = await _predictionRepository.DeleteByEnrollmentIdAsync(id);
+            if (deletedPredictions > 0)
+                _logger.LogInformation("Cascade deleted {Count} prediction(s) for enrollment {EnrollmentId}", deletedPredictions, id);
 
             return await _courseEnrollmentRepository.DeleteAsync(id);
         }

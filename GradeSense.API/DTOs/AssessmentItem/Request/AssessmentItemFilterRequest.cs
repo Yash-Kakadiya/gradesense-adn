@@ -4,6 +4,10 @@
     {
         public string? SearchTerm { get; set; }
         public int? EvaluationSchemeId { get; set; }
+        /// <summary>
+        /// Comma-separated list of evaluation scheme IDs for filtering multiple schemes
+        /// </summary>
+        public string? EvaluationSchemeIds { get; set; }
         public int? CourseOfferingId { get; set; }
         public int? SubjectId { get; set; }
         public int? SubjectUnitId { get; set; }

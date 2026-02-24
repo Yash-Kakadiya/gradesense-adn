@@ -18,6 +18,16 @@ public interface IAuditLogger
     Task LogAsync(string action, string entityName, string entityId, string? details = null, string? oldValue = null, string? newValue = null, string? changedFields = null);
 
     /// <summary>
+    /// Log an action for audit trail with specific actor user ID (for login events)
+    /// </summary>
+    /// <param name="action">Action performed</param>
+    /// <param name="entityName">Name of the entity</param>
+    /// <param name="entityId">ID of the entity</param>
+    /// <param name="actorUserId">ID of the user performing the action</param>
+    /// <param name="details">Additional details about the action</param>
+    Task LogWithActorAsync(string action, string entityName, string entityId, int actorUserId, string? details = null);
+
+    /// <summary>
     /// Log an update action with automatic change detection (comparing objects by property names)
     /// </summary>
     /// <param name="entityName">Name of the entity</param>

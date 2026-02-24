@@ -32,9 +32,16 @@ export const ROUTES = {
 
     // Faculty
     FACULTY_DASHBOARD: '/faculty/dashboard',
+    FACULTY_PROFILE: '/faculty/profile',
     FACULTY_COURSES: '/faculty/courses',
+    FACULTY_STUDENTS: '/faculty/students',
+    FACULTY_ALL_STUDENTS: '/faculty/all-students',
+    FACULTY_ENROLLMENTS: '/faculty/enrollments',
+    FACULTY_SUBJECT_UNITS: '/faculty/subject-units',
     FACULTY_GRADES: '/faculty/grades',
+    FACULTY_ASSESSMENTS: '/faculty/assessments',
     FACULTY_ATTENDANCE: '/faculty/attendance',
+    FACULTY_AT_RISK: '/faculty/at-risk',
     FACULTY_REPORTS: '/faculty/reports',
 
     // Student

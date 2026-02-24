@@ -10,6 +10,7 @@ import { evaluationSchemeService } from '@/services/evaluationService'
 import { courseOfferingService } from '@/services/courseOfferingService'
 import { ROUTES } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 import {
     ClipboardList,
     ArrowLeft,
@@ -110,7 +111,7 @@ const EvaluationSchemeFormPage = () => {
             navigate(ROUTES.ADMIN_EVALUATION_SCHEMES)
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to create evaluation scheme')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -133,7 +134,7 @@ const EvaluationSchemeFormPage = () => {
             navigate(ROUTES.ADMIN_EVALUATION_SCHEMES)
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to update evaluation scheme')
+            toast.error(getErrorMessage(error))
         },
     })
 

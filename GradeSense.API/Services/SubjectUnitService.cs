@@ -32,6 +32,7 @@ namespace GradeSense.API.Services
                 SubjectName = su.Subject.Name,
                 UnitNumber = su.UnitNumber,
                 TopicName = su.TopicName,
+                Description = su.Description,
                 TeachingHours = su.TeachingHours,
                 Weightage = su.Weightage,
                 CreatedAt = su.CreatedAt

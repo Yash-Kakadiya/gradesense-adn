@@ -19,11 +19,12 @@ import {
     Calendar,
     AlertCircle,
     Loader2,
-    Sparkles,
+    Eye,
     GraduationCap,
     Award,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -138,10 +139,10 @@ const FacultyFormPage = () => {
                     userId: parseInt(data.userId),
                     employeeId: data.employeeId,
                     departmentId: parseInt(data.departmentId),
-                    designation: data.designation || undefined,
-                    joiningDate: data.joiningDate || undefined,
-                    qualification: data.qualification || undefined,
-                    specialization: data.specialization || undefined,
+                    designation: data.designation || null,
+                    joiningDate: data.joiningDate || null,
+                    qualification: data.qualification || null,
+                    specialization: data.specialization || null,
                 }
                 return facultyService.create(createPayload)
             }
@@ -153,8 +154,7 @@ const FacultyFormPage = () => {
             navigate(ROUTES.ADMIN_FACULTIES)
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || `Failed to ${isEditMode ? 'update' : 'create'} faculty`
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -411,7 +411,7 @@ const FacultyFormPage = () => {
                 <Card className="border-0 shadow-lg overflow-hidden">
                     <div className="bg-gradient-to-r from-gray-700 to-gray-900 px-6 py-4">
                         <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                            <Sparkles className="w-5 h-5" />
+                            <Eye className="w-5 h-5" />
                             Preview
                         </h2>
                     </div>

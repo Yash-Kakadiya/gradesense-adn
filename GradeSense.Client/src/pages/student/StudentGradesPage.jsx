@@ -1,33 +1,35 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout'
-import { Card, Badge, Select, Table, EmptyState } from '@/components/common'
+import { Card, Badge, Select, Table, EmptyState, Button } from '@/components/common'
 import { LoadingInline } from '@/components/common/Spinner'
 import { useAuth } from '@/context/AuthContext'
 import { courseEnrollmentService } from '@/services/courseEnrollmentService'
 import { studentMarkService } from '@/services/studentMarkService'
-import { Award, TrendingUp, Target, BookOpen, GraduationCap } from 'lucide-react'
+import { Award, TrendingUp, Target, BookOpen, GraduationCap, Download, Filter } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 const StudentGradesPage = () => {
     const { user } = useAuth()
     const [selectedCourse, setSelectedCourse] = useState('')
+    const [selectedSemester, setSelectedSemester] = useState('all')
 
-    // Fetch student's course enrollments
+    // Fetch student's course enrollments (user.id === student.id for students)
     const { data: enrollmentsData, isLoading: loadingEnrollments } = useQuery({
-        queryKey: ['student-enrollments-grades', user?.StudentId],
-        queryFn: () => courseEnrollmentService.getByStudent(user?.StudentId),
-        enabled: !!user?.StudentId,
+        queryKey: ['student-enrollments-grades', user?.id],
+        queryFn: () => courseEnrollmentService.getByStudent(user?.id),
+        enabled: !!user?.id,
     })
 
     // Fetch student marks for selected course
     const { data: marksData, isLoading: loadingMarks } = useQuery({
         queryKey: ['student-marks', selectedCourse],
         queryFn: () => studentMarkService.getAll({
-            studentId: user?.StudentId,
+            studentId: user?.id,
             courseOfferingId: selectedCourse,
             pageSize: 100,
         }),
-        enabled: !!selectedCourse && !!user?.StudentId,
+        enabled: !!selectedCourse && !!user?.id,
     })
 
     // Extract data from API responses (PascalCase)
@@ -40,29 +42,89 @@ const StudentGradesPage = () => {
         enrollments.forEach(e => {
             if (e.Semester) semesterSet.add(e.Semester)
         })
-        return Array.from(semesterSet).sort().map(s => ({
+        return Array.from(semesterSet).sort((a, b) => a - b).map(s => ({
             value: s.toString(),
             label: `Semester ${s}`,
         }))
     }, [enrollments])
 
-    // Build course options
-    const courseOptions = enrollments.map(e => ({
+    // Filter enrollments by semester
+    const filteredEnrollments = useMemo(() => {
+        if (selectedSemester === 'all') return enrollments
+        return enrollments.filter(e => e.Semester?.toString() === selectedSemester)
+    }, [enrollments, selectedSemester])
+
+    // Build course options from filtered enrollments
+    const courseOptions = filteredEnrollments.map(e => ({
         value: e.CourseOfferingId?.toString() || e.Id?.toString(),
         label: `${e.SubjectCode || ''} - ${e.SubjectName}`,
         semester: e.Semester,
         credits: e.Credits,
     }))
 
-    // Calculate statistics
+    // Calculate statistics for filtered enrollments
     const stats = useMemo(() => {
-        const totalCredits = enrollments.reduce((sum, e) => sum + (e.Credits || 0), 0)
-        const enrolledCourses = enrollments.length
+        const totalCredits = filteredEnrollments.reduce((sum, e) => sum + (e.Credits || 0), 0)
+        const enrolledCourses = filteredEnrollments.length
         const avgPercentage = marks.length > 0
             ? marks.reduce((sum, m) => sum + ((m.ObtainedMarks || 0) / (m.AssessmentMaxMarks || 1) * 100), 0) / marks.length
             : 0
         return { totalCredits, enrolledCourses, avgPercentage }
-    }, [enrollments, marks])
+    }, [filteredEnrollments, marks])
+
+    // Calculate semester-wise summary
+    const semesterSummary = useMemo(() => {
+        const summary = {}
+        semesters.forEach(sem => {
+            const semEnrollments = enrollments.filter(e => e.Semester?.toString() === sem.value)
+            const credits = semEnrollments.reduce((sum, e) => sum + (e.Credits || 0), 0)
+            summary[sem.value] = {
+                semester: sem.value,
+                courses: semEnrollments.length,
+                credits,
+            }
+        })
+        return summary
+    }, [enrollments, semesters])
+
+    // Download grades as CSV
+    const downloadGradesCSV = () => {
+        if (marks.length === 0) {
+            toast.error('No marks to download')
+            return
+        }
+
+        const selectedCourseLabel = courseOptions.find(c => c.value === selectedCourse)?.label || 'Unknown Course'
+        const headers = ['Assessment', 'Max Marks', 'Obtained Marks', 'Percentage', 'Status']
+        const rows = marks.map(m => {
+            const pct = m.ObtainedMarks !== null && m.AssessmentMaxMarks > 0
+                ? ((m.ObtainedMarks / m.AssessmentMaxMarks) * 100).toFixed(1)
+                : '-'
+            const status = m.IsAbsent ? 'Absent' : m.ObtainedMarks !== null ? 'Graded' : 'Pending'
+            return [m.AssessmentItemName, m.AssessmentMaxMarks, m.ObtainedMarks ?? '-', `${pct}%`, status]
+        })
+
+        // Add total row
+        const totalObtained = marks.reduce((sum, m) => sum + (m.ObtainedMarks || 0), 0)
+        const totalMax = marks.reduce((sum, m) => sum + (m.AssessmentMaxMarks || 0), 0)
+        const totalPct = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(1) : '0'
+        rows.push(['TOTAL', totalMax, totalObtained, `${totalPct}%`, '-'])
+
+        const csvContent = [
+            `Course: ${selectedCourseLabel}`,
+            `Generated: ${new Date().toLocaleDateString()}`,
+            '',
+            headers.join(','),
+            ...rows.map(row => row.join(','))
+        ].join('\n')
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const link = document.createElement('a')
+        link.href = URL.createObjectURL(blob)
+        link.download = `grades_${selectedCourseLabel.replace(/[^a-z0-9]/gi, '_')}.csv`
+        link.click()
+        toast.success('Grades downloaded successfully')
+    }
 
     // Get selected course details
     const selectedCourseDetails = courseOptions.find(c => c.value === selectedCourse)
@@ -133,6 +195,41 @@ const StudentGradesPage = () => {
                 title="My Grades"
                 description="View your academic performance and grades"
             />
+
+            {/* Semester Filter Tabs */}
+            {semesters.length > 0 && (
+                <Card className="border-0 shadow-sm">
+                    <Card.Body className="py-3">
+                        <div className="flex items-center gap-2 overflow-x-auto">
+                            <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <button
+                                onClick={() => { setSelectedSemester('all'); setSelectedCourse(''); }}
+                                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${selectedSemester === 'all'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                            >
+                                All Semesters
+                            </button>
+                            {semesters.map(sem => (
+                                <button
+                                    key={sem.value}
+                                    onClick={() => { setSelectedSemester(sem.value); setSelectedCourse(''); }}
+                                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${selectedSemester === sem.value
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    {sem.label}
+                                    <span className="ml-2 text-xs opacity-75">
+                                        ({semesterSummary[sem.value]?.courses || 0})
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </Card.Body>
+                </Card>
+            )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -216,13 +313,26 @@ const StudentGradesPage = () => {
                 ) : (
                     <Card className="border-0 shadow-sm overflow-hidden">
                         <Card.Header className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
-                            <Card.Title className="flex items-center gap-2">
-                                <TrendingUp className="w-5 h-5 text-blue-600" />
-                                Assessment Marks
-                            </Card.Title>
-                            <Card.Description>
-                                Your marks for {selectedCourseDetails?.label || 'the selected course'}
-                            </Card.Description>
+                            <div className="flex items-center justify-between w-full">
+                                <div>
+                                    <Card.Title className="flex items-center gap-2">
+                                        <TrendingUp className="w-5 h-5 text-blue-600" />
+                                        Assessment Marks
+                                    </Card.Title>
+                                    <Card.Description>
+                                        Your marks for {selectedCourseDetails?.label || 'the selected course'}
+                                    </Card.Description>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={downloadGradesCSV}
+                                    className="flex items-center gap-2"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Download CSV
+                                </Button>
+                            </div>
                         </Card.Header>
                         <Table columns={marksColumns} data={marks} />
 
@@ -257,17 +367,17 @@ const StudentGradesPage = () => {
             )}
 
             {/* Course Performance Overview */}
-            {enrollments.length > 0 && (
+            {filteredEnrollments.length > 0 && (
                 <Card className="border-0 shadow-sm overflow-hidden">
                     <Card.Header className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
                         <Card.Title className="flex items-center gap-2">
                             <GraduationCap className="w-5 h-5 text-purple-600" />
-                            Enrolled Courses
+                            {selectedSemester === 'all' ? 'All Enrolled Courses' : `Semester ${selectedSemester} Courses`}
                         </Card.Title>
                     </Card.Header>
                     <Card.Body>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {enrollments.map((enrollment) => (
+                            {filteredEnrollments.map((enrollment) => (
                                 <div
                                     key={enrollment.Id}
                                     className={`p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${(enrollment.CourseOfferingId?.toString() || enrollment.Id?.toString()) === selectedCourse

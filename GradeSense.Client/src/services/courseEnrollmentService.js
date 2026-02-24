@@ -49,6 +49,28 @@ export const courseEnrollmentService = {
     },
 
     /**
+     * Get enrollments by course offering
+     * @param {number} courseOfferingId
+     * @returns {Promise}
+     */
+    getByCourseOffering: (courseOfferingId) => {
+        return api.get(API_ENDPOINTS.COURSE_ENROLLMENTS, {
+            params: { courseOfferingId, pageSize: 500 }
+        })
+    },
+
+    /**
+     * Get enrollments by student
+     * @param {number} studentId
+     * @returns {Promise}
+     */
+    getByStudent: (studentId) => {
+        return api.get(API_ENDPOINTS.COURSE_ENROLLMENTS, {
+            params: { studentId, pageSize: 100 }
+        })
+    },
+
+    /**
      * Bulk enroll students
      * @param {Object} data - { courseOfferingId, studentIds }
      * @returns {Promise}

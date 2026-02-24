@@ -24,7 +24,7 @@ import {
     CheckCircle,
     AlertCircle,
     UserPlus,
-    Sparkles,
+    IdCard,
     Info,
     Phone,
     Building,
@@ -33,6 +33,7 @@ import {
     Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 // Phone number regex pattern
 const phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]*$/
@@ -199,8 +200,8 @@ const UserFormPage = () => {
         mutationFn: async (data) => {
             const result = await userService.create(data)
             // If profile image was selected, upload it after user creation
-            if (profileImage && result.data?.Data?.Id) {
-                await userService.uploadProfileImage(result.data.Data.Id, profileImage)
+            if (profileImage && result?.Data?.Id) {
+                await userService.uploadProfileImage(result.Data.Id, profileImage)
             }
             return result
         },
@@ -210,8 +211,7 @@ const UserFormPage = () => {
             navigate(ROUTES.ADMIN_USERS)
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || 'Failed to create user'
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -237,8 +237,7 @@ const UserFormPage = () => {
             navigate(ROUTES.ADMIN_USERS)
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || 'Failed to update user'
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -848,7 +847,7 @@ const UserFormPage = () => {
                     <Card className="border-0 shadow-sm overflow-hidden">
                         <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
                             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                                <Sparkles className="w-5 h-5 text-amber-500" />
+                                <IdCard className="w-5 h-5 text-indigo-500" />
                                 Preview
                             </h2>
                         </div>

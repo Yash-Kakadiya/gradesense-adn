@@ -20,6 +20,7 @@ import {
     FileText,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -126,8 +127,7 @@ const DepartmentFormPage = () => {
             navigate(ROUTES.ADMIN_DEPARTMENTS)
         },
         onError: (error) => {
-            const message = error.response?.data?.Message || `Failed to ${isEditMode ? 'update' : 'create'} department`
-            toast.error(message)
+            toast.error(getErrorMessage(error))
         },
     })
 

@@ -14,13 +14,16 @@ namespace GradeSense.API.Controllers
     {
         private readonly IPredictionService _predictionService;
         private readonly ILogger<PredictionsController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public PredictionsController(
             IPredictionService predictionService,
-            ILogger<PredictionsController> logger)
+            ILogger<PredictionsController> logger,
+            IAuditLogger auditLogger)
         {
             _predictionService = predictionService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
@@ -93,6 +96,9 @@ namespace GradeSense.API.Controllers
             {
                 var prediction = await _predictionService.CreateAsync(request);
 
+                await _auditLogger.LogAsync("Create", "Prediction", prediction.Id, 
+                    $"Created prediction for enrollment {request.CourseEnrollmentId}: Category {request.PredictedCategory}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = prediction.Id },
@@ -132,7 +138,11 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                var oldPrediction = await _predictionService.GetByIdAsync(id);
                 var prediction = await _predictionService.UpdateAsync(id, request);
+
+                if (oldPrediction != null)
+                    await _auditLogger.LogUpdateAsync("Prediction", id, oldPrediction, prediction, "Updated prediction/risk assessment");
 
                 return Ok(ApiResponse<PredictionResponse>.SuccessResponse(
                     prediction,
@@ -168,6 +178,8 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _predictionService.DeleteAsync(id);
+
+                await _auditLogger.LogAsync("Delete", "Prediction", id, "Deleted prediction");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

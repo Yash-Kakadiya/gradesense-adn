@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Faculty")]
     public class SubjectsController : ControllerBase
     {
         private readonly ISubjectService _subjectService;
@@ -30,6 +30,7 @@ namespace GradeSense.API.Controllers
         /// Get all subjects with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<SubjectListResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<SubjectListResponse>>>> GetAll(
             [FromQuery] SubjectFilterRequest filter)
@@ -55,6 +56,7 @@ namespace GradeSense.API.Controllers
         /// Get subject by ID
         /// </summary>
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<SubjectDetailResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<SubjectDetailResponse>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<SubjectDetailResponse>>> GetById(int id)
@@ -87,6 +89,7 @@ namespace GradeSense.API.Controllers
         /// Create a new subject
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<SubjectResponse>>> Create(
@@ -129,6 +132,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing subject
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status400BadRequest)]
@@ -176,6 +180,7 @@ namespace GradeSense.API.Controllers
         /// Delete a subject (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]

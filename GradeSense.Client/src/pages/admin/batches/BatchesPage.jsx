@@ -43,6 +43,7 @@ import {
     BookOpen,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 // Batch Detail Modal Component
 const BatchDetailModal = ({ isOpen, onClose, batchId }) => {
@@ -419,8 +420,8 @@ const BatchesPage = () => {
             deleteModal.close()
             setSelectedBatches([])
         },
-        onError: () => {
-            toast.error('Failed to delete batch')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -473,16 +474,16 @@ const BatchesPage = () => {
 
     const handleExportCsv = async () => {
         const blob = await exportBatchesToCsv({
-            departmentId: departmentFilter ? parseInt(departmentFilter) : null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            departmentId: departmentFilter ? parseInt(departmentFilter) : undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `batches_${new Date().toISOString().split('T')[0]}.csv`)
     }
 
     const handleExportExcel = async () => {
         const blob = await exportBatchesToExcel({
-            departmentId: departmentFilter ? parseInt(departmentFilter) : null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            departmentId: departmentFilter ? parseInt(departmentFilter) : undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `batches_${new Date().toISOString().split('T')[0]}.xlsx`)
     }

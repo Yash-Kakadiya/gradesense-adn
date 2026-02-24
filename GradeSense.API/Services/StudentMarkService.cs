@@ -37,6 +37,9 @@ namespace GradeSense.API.Services
             var data = studentMarks.Select(sm => new StudentMarkListResponse
             {
                 Id = sm.Id,
+                StudentId = sm.Enrollment.StudentId,
+                EnrollmentId = sm.EnrollmentId,
+                AssessmentItemId = sm.AssessmentItemId,
                 StudentName = sm.Enrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = sm.Enrollment.Student.EnrollmentNumber,
                 AssessmentItemName = sm.AssessmentItem.Name,
@@ -271,6 +274,94 @@ namespace GradeSense.API.Services
         }
 
         #region Bulk Operations
+
+        public async Task<BulkStudentMarkResponse> BulkEntrySaveAsync(BulkStudentMarkRequest request)
+        {
+            var response = new BulkStudentMarkResponse
+            {
+                TotalRequested = request.Marks.Count
+            };
+
+            // Validate AssessmentItem exists
+            var assessmentItem = await _assessmentItemRepository.GetByIdAsync(request.AssessmentItemId);
+            if (assessmentItem == null)
+                throw new KeyNotFoundException("Assessment item not found");
+
+            if (!assessmentItem.IsActive)
+                throw new InvalidOperationException("Assessment item is not active");
+
+            // Validate Grader exists
+            if (!await _facultyRepository.ExistsAsync(request.GraderId))
+                throw new KeyNotFoundException("Grader (Faculty) not found");
+
+            // Get all enrollments for the course offering
+            var courseOfferingId = assessmentItem.EvaluationScheme.CourseOfferingId;
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(courseOfferingId);
+            var enrollmentMap = enrollments.ToDictionary(e => e.StudentId, e => e);
+
+            foreach (var entry in request.Marks)
+            {
+                try
+                {
+                    // Find enrollment for this student
+                    if (!enrollmentMap.TryGetValue(entry.StudentId, out var enrollment))
+                    {
+                        response.FailedEntries++;
+                        response.Errors.Add($"Student ID {entry.StudentId} is not enrolled in this course");
+                        continue;
+                    }
+
+                    // Validate marks obtained doesn't exceed max marks
+                    if (entry.MarksObtained > assessmentItem.MaxMarks)
+                    {
+                        response.FailedEntries++;
+                        response.Errors.Add($"Marks for student {entry.StudentId} exceed max marks ({assessmentItem.MaxMarks})");
+                        continue;
+                    }
+
+                    // Check for existing mark
+                    var existingMark = await _studentMarkRepository.FindByStudentAndAssessmentAsync(
+                        entry.StudentId, request.AssessmentItemId);
+
+                    if (existingMark != null)
+                    {
+                        // Update existing mark
+                        existingMark.ObtainedMarks = entry.MarksObtained;
+                        existingMark.IsAbsent = entry.IsAbsent;
+                        existingMark.Remarks = entry.Remarks;
+                        existingMark.GraderId = request.GraderId;
+                        existingMark.GradedDate = DateTime.UtcNow;
+                        existingMark.UpdatedAt = DateTime.UtcNow;
+                        await _studentMarkRepository.UpdateAsync(existingMark);
+                    }
+                    else
+                    {
+                        // Create new mark
+                        var newMark = new StudentMark
+                        {
+                            EnrollmentId = enrollment.Id,
+                            AssessmentItemId = request.AssessmentItemId,
+                            ObtainedMarks = entry.MarksObtained,
+                            IsAbsent = entry.IsAbsent,
+                            Remarks = entry.Remarks,
+                            GraderId = request.GraderId,
+                            GradedDate = DateTime.UtcNow,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await _studentMarkRepository.CreateAsync(newMark);
+                    }
+
+                    response.SuccessfulEntries++;
+                }
+                catch (Exception ex)
+                {
+                    response.FailedEntries++;
+                    response.Errors.Add($"Error processing student {entry.StudentId}: {ex.Message}");
+                }
+            }
+
+            return response;
+        }
 
         public async Task<BulkOperationResponse<StudentMarkResponse>> BulkImportGradesAsync(
             int assessmentItemId, int graderId, Stream csvStream)

@@ -13,7 +13,6 @@ import {
     ChevronDown,
     Search,
     HelpCircle,
-    Sparkles,
     Command,
     RefreshCw,
     Home,
@@ -181,9 +180,6 @@ const Navbar = ({ onMenuClick }) => {
                                 </span>
                             </Fragment>
                         ))}
-                        {breadcrumb.length > 0 && (
-                            <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                        )}
                     </div>
                 </div>
 
@@ -227,9 +223,9 @@ const Navbar = ({ onMenuClick }) => {
                     </div>
 
                     {/* Help Button */}
-                    <button className="hidden md:flex p-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all duration-200 hover:scale-105">
+                    {/* <button className="hidden md:flex p-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all duration-200 hover:scale-105">
                         <HelpCircle className="w-5 h-5" />
-                    </button>
+                    </button> */}
 
                     {/* Notifications */}
                     <Menu as="div" className="relative">
@@ -391,8 +387,10 @@ const Navbar = ({ onMenuClick }) => {
                                                         navigate(ROUTES.ADMIN_PROFILE)
                                                     } else if (user?.role === ROLES.STUDENT) {
                                                         navigate(ROUTES.STUDENT_PROFILE)
+                                                    } else if (user?.role === ROLES.FACULTY) {
+                                                        navigate(ROUTES.FACULTY_PROFILE)
                                                     } else {
-                                                        // For faculty or fallback, show modal
+                                                        // Fallback to modal for unknown roles
                                                         setShowProfileModal(true)
                                                     }
                                                 }}

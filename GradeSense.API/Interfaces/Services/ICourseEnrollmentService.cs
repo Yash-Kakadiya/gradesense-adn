@@ -11,5 +11,6 @@ namespace GradeSense.API.Interfaces.Services
         Task<CourseEnrollmentResponse> CreateAsync(CreateCourseEnrollmentRequest request);
         Task<CourseEnrollmentResponse> UpdateAsync(int id, UpdateCourseEnrollmentRequest request);
         Task<bool> DeleteAsync(int id);
+        Task<BulkEnrollResponse> BulkEnrollAsync(BulkEnrollRequest request);
     }
 }

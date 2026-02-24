@@ -13,22 +13,22 @@ const StudentAttendancePage = () => {
     const { user } = useAuth()
     const [selectedCourse, setSelectedCourse] = useState('all')
 
-    // Fetch student's course enrollments
+    // Fetch student's course enrollments (user.id === student.id for students)
     const { data: enrollmentsData, isLoading: loadingEnrollments } = useQuery({
-        queryKey: ['student-enrollments-attendance', user?.StudentId],
-        queryFn: () => courseEnrollmentService.getByStudent(user?.StudentId),
-        enabled: !!user?.StudentId,
+        queryKey: ['student-enrollments-attendance', user?.id],
+        queryFn: () => courseEnrollmentService.getByStudent(user?.id),
+        enabled: !!user?.id,
     })
 
     // Fetch attendance records for the student
     const { data: attendanceData, isLoading: loadingAttendance } = useQuery({
-        queryKey: ['student-attendance', user?.StudentId, selectedCourse],
+        queryKey: ['student-attendance', user?.id, selectedCourse],
         queryFn: () => attendanceService.getAll({
-            studentId: user?.StudentId,
+            studentId: user?.id,
             courseOfferingId: selectedCourse !== 'all' ? selectedCourse : undefined,
             pageSize: 500,
         }),
-        enabled: !!user?.StudentId,
+        enabled: !!user?.id,
     })
 
     // Extract data from API responses (PascalCase)

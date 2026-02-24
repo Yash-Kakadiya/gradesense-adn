@@ -4,6 +4,8 @@ import { PageHeader } from '@/components/layout'
 import { Card, Badge, StatCard } from '@/components/common'
 import { useAuth } from '@/context/AuthContext'
 import { dashboardService } from '@/services/dashboardService'
+import { courseEnrollmentService } from '@/services/courseEnrollmentService'
+import { assessmentItemService } from '@/services/assessmentItemService'
 import { ROUTES } from '@/utils/constants'
 import { formatDate } from '@/utils/helpers'
 import {
@@ -24,6 +26,8 @@ import {
     AlertTriangle,
     RefreshCw,
     Target,
+    Clock,
+    FileText,
 } from 'lucide-react'
 
 const StudentDashboard = () => {
@@ -37,6 +41,25 @@ const StudentDashboard = () => {
         enabled: !!user?.id,
         staleTime: 30000,
     })
+
+    // Fetch student's enrolled courses for assessments
+    const { data: enrollmentsData } = useQuery({
+        queryKey: ['student-enrollments-dashboard', user?.id],
+        queryFn: () => courseEnrollmentService.getByStudent(user?.id),
+        enabled: !!user?.id,
+    })
+
+    const enrollments = enrollmentsData?.Data?.Data || enrollmentsData?.Data || []
+    const courseOfferingIds = enrollments.map(e => e.CourseOfferingId || e.Id).filter(Boolean)
+
+    // Fetch assessments for enrolled courses
+    const { data: assessmentsData, isLoading: loadingAssessments } = useQuery({
+        queryKey: ['student-assessments', courseOfferingIds],
+        queryFn: () => assessmentItemService.getUpcomingForStudent(courseOfferingIds),
+        enabled: courseOfferingIds.length > 0,
+    })
+
+    const assessments = assessmentsData?.Data?.Data || []
 
     // Extract data from API response
     const data = dashboard?.Data || dashboard || {}
@@ -372,6 +395,51 @@ const StudentDashboard = () => {
                                                     <p className="text-xs text-gray-400">
                                                         {grade.GradedDate && formatDate(grade.GradedDate, 'short')}
                                                     </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </Card.Body>
+                    </Card>
+
+                    {/* Upcoming Assessments */}
+                    <Card className="border-0 shadow-md">
+                        <Card.Header className="border-b bg-gray-50/50">
+                            <Card.Title className="flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-blue-600" />
+                                Upcoming Assessments
+                            </Card.Title>
+                        </Card.Header>
+                        <Card.Body className="p-0">
+                            {loadingAssessments ? (
+                                <div className="flex items-center justify-center p-6">
+                                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                                </div>
+                            ) : assessments.length === 0 ? (
+                                <div className="text-center py-6 text-gray-500">
+                                    <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                                    <p className="text-sm">No upcoming assessments</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-100">
+                                    {assessments.slice(0, 5).map((assessment, index) => (
+                                        <div key={index} className="p-3 hover:bg-gray-50/50 transition-colors">
+                                            <div className="flex items-center justify-between">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{assessment.Name}</p>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <Badge variant="info" className="text-xs">
+                                                            {assessment.SubjectCode || assessment.SubjectName}
+                                                        </Badge>
+                                                        <span className="text-xs text-gray-400">{assessment.MaxMarks} marks</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <Badge variant={assessment.Weightage >= 30 ? 'warning' : 'default'}>
+                                                        {assessment.Weightage}%
+                                                    </Badge>
                                                 </div>
                                             </div>
                                         </div>

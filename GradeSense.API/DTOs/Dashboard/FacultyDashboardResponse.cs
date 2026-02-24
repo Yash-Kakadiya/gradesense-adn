@@ -48,6 +48,7 @@ public class FacultyCourseItem
     public string SubjectCode { get; set; } = string.Empty;
     public string SubjectName { get; set; } = string.Empty;
     public string BatchName { get; set; } = string.Empty;
+    public int Semester { get; set; }
     public int AcademicYear { get; set; }
     public int EnrolledStudents { get; set; }
     public int PendingGrades { get; set; }

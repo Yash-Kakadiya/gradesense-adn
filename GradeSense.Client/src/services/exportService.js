@@ -102,7 +102,7 @@ export const exportStudentsToExcel = async (filters = {}) => {
 export const exportDepartmentsToCsv = async (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/departments/csv?${params.toString()}`, {
         responseType: 'blob'
@@ -113,7 +113,7 @@ export const exportDepartmentsToCsv = async (filters = {}) => {
 export const exportDepartmentsToExcel = async (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/departments/excel?${params.toString()}`, {
         responseType: 'blob'
@@ -131,7 +131,7 @@ export const exportBatchesToCsv = async (filters = {}) => {
     if (filters.semester) params.append('Semester', filters.semester);
     if (filters.academicYear) params.append('AcademicYear', filters.academicYear);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/batches/csv?${params.toString()}`, {
         responseType: 'blob'
@@ -145,7 +145,7 @@ export const exportBatchesToExcel = async (filters = {}) => {
     if (filters.semester) params.append('Semester', filters.semester);
     if (filters.academicYear) params.append('AcademicYear', filters.academicYear);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/batches/excel?${params.toString()}`, {
         responseType: 'blob'
@@ -162,9 +162,9 @@ export const exportSubjectsToCsv = async (filters = {}) => {
     if (filters.departmentId) params.append('DepartmentId', filters.departmentId);
     if (filters.semester) params.append('Semester', filters.semester);
     if (filters.subjectType) params.append('SubjectType', filters.subjectType);
-    if (filters.isElective !== undefined) params.append('IsElective', filters.isElective);
+    if (filters.isElective != null) params.append('IsElective', filters.isElective);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/subjects/csv?${params.toString()}`, {
         responseType: 'blob'
@@ -177,9 +177,9 @@ export const exportSubjectsToExcel = async (filters = {}) => {
     if (filters.departmentId) params.append('DepartmentId', filters.departmentId);
     if (filters.semester) params.append('Semester', filters.semester);
     if (filters.subjectType) params.append('SubjectType', filters.subjectType);
-    if (filters.isElective !== undefined) params.append('IsElective', filters.isElective);
+    if (filters.isElective != null) params.append('IsElective', filters.isElective);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/subjects/excel?${params.toString()}`, {
         responseType: 'blob'
@@ -198,7 +198,7 @@ export const exportCourseOfferingsToCsv = async (filters = {}) => {
     if (filters.departmentId) params.append('DepartmentId', filters.departmentId);
     if (filters.academicYear) params.append('AcademicYear', filters.academicYear);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/course-offerings/csv?${params.toString()}`, {
         responseType: 'blob'
@@ -213,7 +213,7 @@ export const exportCourseOfferingsToExcel = async (filters = {}) => {
     if (filters.departmentId) params.append('DepartmentId', filters.departmentId);
     if (filters.academicYear) params.append('AcademicYear', filters.academicYear);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/course-offerings/excel?${params.toString()}`, {
         responseType: 'blob'
@@ -232,7 +232,7 @@ export const exportEvaluationSchemesToCsv = async (filters = {}) => {
     if (filters.batchId) params.append('BatchId', filters.batchId);
     if (filters.evaluationType) params.append('EvaluationType', filters.evaluationType);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/evaluation-schemes/csv?${params.toString()}`, {
         responseType: 'blob'
@@ -247,7 +247,7 @@ export const exportEvaluationSchemesToExcel = async (filters = {}) => {
     if (filters.batchId) params.append('BatchId', filters.batchId);
     if (filters.evaluationType) params.append('EvaluationType', filters.evaluationType);
     if (filters.search) params.append('Search', filters.search);
-    if (filters.isActive !== undefined) params.append('IsActive', filters.isActive);
+    if (filters.isActive != null) params.append('IsActive', filters.isActive);
 
     const response = await api.get(`/api/export/evaluation-schemes/excel?${params.toString()}`, {
         responseType: 'blob'

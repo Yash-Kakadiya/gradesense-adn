@@ -12,6 +12,7 @@ import { batchService } from '@/services/batchService'
 import { facultyService } from '@/services/facultyService'
 import { ROUTES } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 import {
     BookOpen,
     ArrowLeft,
@@ -135,7 +136,7 @@ const CourseOfferingFormPage = () => {
             navigate(ROUTES.ADMIN_COURSE_OFFERINGS)
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to create course offering')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -160,7 +161,7 @@ const CourseOfferingFormPage = () => {
             navigate(ROUTES.ADMIN_COURSE_OFFERINGS)
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to update course offering')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -205,7 +206,7 @@ const CourseOfferingFormPage = () => {
         { value: '', label: 'Not Assigned' },
         ...faculties.map((f) => ({
             value: f.Id?.toString(),
-            label: `${f.EmployeeId} - ${f.FirstName} ${f.LastName}`,
+            label: `${f.EmployeeId} - ${f.FullName}`,
         })),
     ]
 

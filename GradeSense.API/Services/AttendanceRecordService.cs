@@ -33,6 +33,9 @@ namespace GradeSense.API.Services
             var data = attendanceRecords.Select(ar => new AttendanceRecordListResponse
             {
                 Id = ar.Id,
+                StudentId = ar.Enrollment.StudentId,
+                EnrollmentId = ar.EnrollmentId,
+                CourseOfferingId = ar.Enrollment.CourseOfferingId,
                 StudentName = ar.Enrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = ar.Enrollment.Student.EnrollmentNumber,
                 SubjectCode = ar.Enrollment.CourseOffering.Subject.Code,
@@ -234,6 +237,90 @@ namespace GradeSense.API.Services
             }
 
             return await _attendanceRecordRepository.DeleteAsync(id);
+        }
+
+        public async Task<BulkAttendanceResponse> BulkMarkAsync(BulkAttendanceRequest request)
+        {
+            var response = new BulkAttendanceResponse
+            {
+                TotalRequested = request.Records.Count
+            };
+
+            // Validate course offering exists
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(request.CourseOfferingId);
+            if (enrollments == null || enrollments.Count == 0)
+            {
+                throw new KeyNotFoundException("Course offering not found or has no enrollments");
+            }
+
+            // Validate faculty exists
+            if (!await _facultyRepository.ExistsAsync(request.MarkedById))
+            {
+                throw new KeyNotFoundException("Faculty not found");
+            }
+
+            var validStatuses = new[] { "Present", "Absent", "Late", "Excused" };
+            var dateOnly = DateOnly.FromDateTime(request.Date);
+
+            foreach (var entry in request.Records)
+            {
+                try
+                {
+                    // Validate status
+                    if (!validStatuses.Contains(entry.Status))
+                    {
+                        response.FailedEntries++;
+                        response.Errors.Add($"Invalid status '{entry.Status}' for student {entry.StudentId}");
+                        continue;
+                    }
+
+                    // Find enrollment for this student in this course
+                    var enrollment = enrollments.FirstOrDefault(e => e.StudentId == entry.StudentId);
+                    if (enrollment == null)
+                    {
+                        response.FailedEntries++;
+                        response.Errors.Add($"Student {entry.StudentId} is not enrolled in this course");
+                        continue;
+                    }
+
+                    // Check for existing attendance record for this date
+                    var existingRecord = await _attendanceRecordRepository.FindByEnrollmentAndDateAsync(
+                        enrollment.Id, dateOnly);
+
+                    if (existingRecord != null)
+                    {
+                        // Update existing record
+                        existingRecord.Status = entry.Status;
+                        existingRecord.Remarks = entry.Remarks;
+                        existingRecord.RecordedBy = request.MarkedById;
+                        existingRecord.UpdatedAt = DateTime.UtcNow;
+                        await _attendanceRecordRepository.UpdateAsync(existingRecord);
+                    }
+                    else
+                    {
+                        // Create new record
+                        var newRecord = new AttendanceRecord
+                        {
+                            EnrollmentId = enrollment.Id,
+                            AttendanceDate = dateOnly,
+                            Status = entry.Status,
+                            Remarks = entry.Remarks,
+                            RecordedBy = request.MarkedById,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await _attendanceRecordRepository.CreateAsync(newRecord);
+                    }
+
+                    response.SuccessfulEntries++;
+                }
+                catch (Exception ex)
+                {
+                    response.FailedEntries++;
+                    response.Errors.Add($"Error processing student {entry.StudentId}: {ex.Message}");
+                }
+            }
+
+            return response;
         }
     }
 }

@@ -70,6 +70,34 @@ const predictionService = {
     delete: async (id) => {
         await api.delete(`${API_ENDPOINTS.PREDICTIONS}/${id}`)
     },
+
+    /**
+     * Update a prediction (faculty review)
+     * @param {string} id - Prediction ID
+     * @param {Object} data - Update data
+     * @returns {Promise<Object>} Updated prediction
+     */
+    update: async (id, data) => {
+        const response = await api.put(`${API_ENDPOINTS.PREDICTIONS}/${id}`, data)
+        return response.data
+    },
+
+    /**
+     * Review a prediction (faculty override)
+     * @param {string} id - Prediction ID
+     * @param {Object} reviewData - { predictedCategory, riskScore, reviewNotes }
+     * @param {number} facultyId - Faculty ID doing the review
+     * @returns {Promise<Object>} Reviewed prediction
+     */
+    reviewPrediction: async (id, reviewData, facultyId) => {
+        const response = await api.put(`${API_ENDPOINTS.PREDICTIONS}/${id}`, {
+            ...reviewData,
+            ReviewedBy: facultyId,
+            ReviewedAt: new Date().toISOString(),
+        })
+        return response.data
+    },
 }
 
+export { predictionService }
 export default predictionService

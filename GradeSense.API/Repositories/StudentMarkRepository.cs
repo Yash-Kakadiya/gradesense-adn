@@ -143,6 +143,36 @@ namespace GradeSense.API.Repositories
             return true;
         }
 
+        public async Task<int> DeleteByEnrollmentIdAsync(int enrollmentId)
+        {
+            var studentMarks = await _context.StudentMarks
+                .Where(sm => sm.EnrollmentId == enrollmentId && sm.DeletedAt == null)
+                .ToListAsync();
+
+            foreach (var sm in studentMarks)
+            {
+                sm.DeletedAt = DateTime.Now;
+            }
+
+            await _context.SaveChangesAsync();
+            return studentMarks.Count;
+        }
+
+        public async Task<int> DeleteByAssessmentItemIdAsync(int assessmentItemId)
+        {
+            var studentMarks = await _context.StudentMarks
+                .Where(sm => sm.AssessmentItemId == assessmentItemId && sm.DeletedAt == null)
+                .ToListAsync();
+
+            foreach (var sm in studentMarks)
+            {
+                sm.DeletedAt = DateTime.Now;
+            }
+
+            await _context.SaveChangesAsync();
+            return studentMarks.Count;
+        }
+
         public async Task<bool> ExistsAsync(int id)
         {
             return await _context.StudentMarks.AnyAsync(sm => sm.Id == id && sm.DeletedAt == null);
@@ -196,6 +226,16 @@ namespace GradeSense.API.Repositories
                 .OrderBy(sm => sm.Enrollment.Student.EnrollmentNumber)
                 .ThenBy(sm => sm.AssessmentItem.Name)
                 .ToListAsync();
+        }
+
+        public async Task<StudentMark?> FindByStudentAndAssessmentAsync(int studentId, int assessmentItemId)
+        {
+            return await _context.StudentMarks
+                .Include(sm => sm.Enrollment)
+                .FirstOrDefaultAsync(sm => 
+                    sm.Enrollment.StudentId == studentId && 
+                    sm.AssessmentItemId == assessmentItemId && 
+                    sm.DeletedAt == null);
         }
     }
 }

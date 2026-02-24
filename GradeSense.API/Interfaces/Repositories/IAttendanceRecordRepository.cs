@@ -10,7 +10,9 @@ namespace GradeSense.API.Interfaces.Repositories
         Task<AttendanceRecord> CreateAsync(AttendanceRecord attendanceRecord);
         Task<AttendanceRecord> UpdateAsync(AttendanceRecord attendanceRecord);
         Task<bool> DeleteAsync(int id);
+        Task<int> DeleteByEnrollmentIdAsync(int enrollmentId);
         Task<bool> ExistsAsync(int id);
         Task<bool> AttendanceExistsForDateAsync(int enrollmentId, DateOnly attendanceDate, int? excludeId = null);
+        Task<AttendanceRecord?> FindByEnrollmentAndDateAsync(int enrollmentId, DateOnly attendanceDate);
     }
 }

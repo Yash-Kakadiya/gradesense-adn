@@ -11,5 +11,6 @@ namespace GradeSense.API.Interfaces.Services
         Task<AttendanceRecordResponse> CreateAsync(CreateAttendanceRecordRequest request);
         Task<AttendanceRecordResponse> UpdateAsync(int id, UpdateAttendanceRecordRequest request);
         Task<bool> DeleteAsync(int id);
+        Task<BulkAttendanceResponse> BulkMarkAsync(BulkAttendanceRequest request);
     }
 }

@@ -14,19 +14,23 @@ namespace GradeSense.API.Controllers
     {
         private readonly IAssessmentItemService _assessmentItemService;
         private readonly ILogger<AssessmentItemsController> _logger;
+        private readonly IAuditLogger _auditLogger;
 
         public AssessmentItemsController(
             IAssessmentItemService assessmentItemService,
-            ILogger<AssessmentItemsController> logger)
+            ILogger<AssessmentItemsController> logger,
+            IAuditLogger auditLogger)
         {
             _assessmentItemService = assessmentItemService;
             _logger = logger;
+            _auditLogger = auditLogger;
         }
 
         /// <summary>
         /// Get all assessment items with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<AssessmentItemListResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<AssessmentItemListResponse>>>> GetAll(
             [FromQuery] AssessmentItemFilterRequest filter)
@@ -52,6 +56,7 @@ namespace GradeSense.API.Controllers
         /// Get assessment item by ID
         /// </summary>
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemDetailResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemDetailResponse>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<AssessmentItemDetailResponse>>> GetById(int id)
@@ -93,6 +98,9 @@ namespace GradeSense.API.Controllers
             {
                 var assessmentItem = await _assessmentItemService.CreateAsync(request);
 
+                await _auditLogger.LogAsync("Create", "AssessmentItem", assessmentItem.Id.ToString(), 
+                    $"Created assessment item: {request.Name}");
+
                 return CreatedAtAction(
                     nameof(GetById),
                     new { id = assessmentItem.Id },
@@ -132,7 +140,11 @@ namespace GradeSense.API.Controllers
         {
             try
             {
+                var oldItem = await _assessmentItemService.GetByIdAsync(id);
                 var assessmentItem = await _assessmentItemService.UpdateAsync(id, request);
+
+                if (oldItem != null)
+                    await _auditLogger.LogUpdateAsync("AssessmentItem", id.ToString(), oldItem, assessmentItem, "Updated assessment item");
 
                 return Ok(ApiResponse<AssessmentItemResponse>.SuccessResponse(
                     assessmentItem,
@@ -168,6 +180,8 @@ namespace GradeSense.API.Controllers
             try
             {
                 var result = await _assessmentItemService.DeleteAsync(id);
+
+                await _auditLogger.LogAsync("Delete", "AssessmentItem", id.ToString(), "Deleted assessment item (with cascade delete of student marks)");
 
                 return Ok(ApiResponse<bool>.SuccessResponse(
                     result,

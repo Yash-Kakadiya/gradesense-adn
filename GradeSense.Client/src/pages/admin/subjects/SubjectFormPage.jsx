@@ -10,6 +10,7 @@ import { subjectService } from '@/services/subjectService'
 import { departmentService } from '@/services/departmentService'
 import { ROUTES } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 import {
     BookOpen,
     ArrowLeft,
@@ -145,7 +146,7 @@ const SubjectFormPage = () => {
             navigate(ROUTES.ADMIN_SUBJECTS)
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to create subject')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -173,7 +174,7 @@ const SubjectFormPage = () => {
             navigate(ROUTES.ADMIN_SUBJECTS)
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to update subject')
+            toast.error(getErrorMessage(error))
         },
     })
 

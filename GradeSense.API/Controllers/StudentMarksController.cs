@@ -30,12 +30,24 @@ namespace GradeSense.API.Controllers
         /// Get all student marks with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<StudentMarkListResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<StudentMarkListResponse>>>> GetAll(
             [FromQuery] StudentMarkFilterRequest filter)
         {
             try
             {
+                // Students can only see their own marks
+                if (User.IsInRole("Student"))
+                {
+                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId))
+                    {
+                        return Forbid();
+                    }
+                    filter.StudentId = studentId;
+                }
+
                 var result = await _studentMarkService.GetAllAsync(filter);
                 return Ok(ApiResponse<PagedResponse<StudentMarkListResponse>>.SuccessResponse(
                     result,
@@ -55,6 +67,7 @@ namespace GradeSense.API.Controllers
         /// Get student mark by ID
         /// </summary>
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkDetailResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkDetailResponse>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<StudentMarkDetailResponse>>> GetById(int id)
@@ -67,6 +80,16 @@ namespace GradeSense.API.Controllers
                     return NotFound(ApiResponse<StudentMarkDetailResponse>.ErrorResponse(
                         $"Student mark with ID {id} not found"
                     ));
+                }
+
+                // Students can only view their own marks
+                if (User.IsInRole("Student"))
+                {
+                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId) || studentMark.StudentId != studentId)
+                    {
+                        return Forbid();
+                    }
                 }
 
                 return Ok(ApiResponse<StudentMarkDetailResponse>.SuccessResponse(
@@ -206,6 +229,50 @@ namespace GradeSense.API.Controllers
                 _logger.LogError(ex, "Error deleting student mark {StudentMarkId}", id);
                 return StatusCode(500, ApiResponse<bool>.ErrorResponse(
                     "An error occurred while deleting the student mark"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Bulk entry for student marks
+        /// </summary>
+        /// <remarks>
+        /// Submit marks for multiple students for a specific assessment
+        /// </remarks>
+        [HttpPost("bulk")]
+        [ProducesResponseType(typeof(ApiResponse<BulkStudentMarkResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkStudentMarkResponse>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkStudentMarkResponse>>> BulkEntry(
+            [FromBody] BulkStudentMarkRequest request)
+        {
+            try
+            {
+                if (request.Marks == null || request.Marks.Count == 0)
+                {
+                    return BadRequest(ApiResponse<BulkStudentMarkResponse>.ErrorResponse("At least one mark entry is required"));
+                }
+
+                var result = await _studentMarkService.BulkEntrySaveAsync(request);
+
+                var message = result.SuccessfulEntries > 0
+                    ? $"Successfully saved {result.SuccessfulEntries} of {result.TotalRequested} marks"
+                    : "No marks were saved";
+
+                return Ok(ApiResponse<BulkStudentMarkResponse>.SuccessResponse(result, message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkStudentMarkResponse>.ErrorResponse(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<BulkStudentMarkResponse>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during bulk grade entry");
+                return StatusCode(500, ApiResponse<BulkStudentMarkResponse>.ErrorResponse(
+                    "An error occurred during bulk grade entry"
                 ));
             }
         }

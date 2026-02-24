@@ -190,8 +190,10 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition =
             System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
         options.JsonSerializerOptions.PropertyNamingPolicy = null; // Keep PascalCase
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true; // Allow camelCase input from frontend
 
         options.JsonSerializerOptions.Converters.Add(new DateOnlyJsonConverter()); // Register DateOnly converter
+        options.JsonSerializerOptions.Converters.Add(new NullableDateOnlyJsonConverter()); // Register nullable DateOnly converter
     });
 
 // ============================================================================

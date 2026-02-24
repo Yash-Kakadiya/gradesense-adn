@@ -150,6 +150,21 @@ namespace GradeSense.API.Repositories
             return true;
         }
 
+        public async Task<int> DeleteByEnrollmentIdAsync(int enrollmentId)
+        {
+            var records = await _context.AttendanceRecords
+                .Where(ar => ar.EnrollmentId == enrollmentId && ar.DeletedAt == null)
+                .ToListAsync();
+
+            foreach (var ar in records)
+            {
+                ar.DeletedAt = DateTime.Now;
+            }
+
+            await _context.SaveChangesAsync();
+            return records.Count;
+        }
+
         public async Task<bool> ExistsAsync(int id)
         {
             return await _context.AttendanceRecords.AnyAsync(ar => ar.Id == id && ar.DeletedAt == null);
@@ -168,6 +183,15 @@ namespace GradeSense.API.Repositories
             }
 
             return await query.AnyAsync();
+        }
+
+        public async Task<AttendanceRecord?> FindByEnrollmentAndDateAsync(int enrollmentId, DateOnly attendanceDate)
+        {
+            return await _context.AttendanceRecords
+                .FirstOrDefaultAsync(ar =>
+                    ar.EnrollmentId == enrollmentId &&
+                    ar.AttendanceDate == attendanceDate &&
+                    ar.DeletedAt == null);
         }
     }
 }

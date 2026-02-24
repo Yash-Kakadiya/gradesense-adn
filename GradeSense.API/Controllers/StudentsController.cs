@@ -55,12 +55,23 @@ namespace GradeSense.API.Controllers
         /// Get student by ID
         /// </summary>
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<StudentDetailResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<StudentDetailResponse>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<StudentDetailResponse>>> GetById(int id)
         {
             try
             {
+                // Students can only view their own profile
+                if (User.IsInRole("Student"))
+                {
+                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId) || id != studentId)
+                    {
+                        return Forbid();
+                    }
+                }
+
                 var student = await _studentService.GetByIdAsync(id);
                 if (student == null)
                 {
@@ -79,6 +90,45 @@ namespace GradeSense.API.Controllers
                 _logger.LogError(ex, "Error retrieving student {StudentId}", id);
                 return StatusCode(500, ApiResponse<StudentDetailResponse>.ErrorResponse(
                     "An error occurred while retrieving the student"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Get current logged-in student's profile
+        /// </summary>
+        [HttpGet("me")]
+        [Authorize(Roles = "Student")]
+        [ProducesResponseType(typeof(ApiResponse<StudentDetailResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<StudentDetailResponse>), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ApiResponse<StudentDetailResponse>>> GetMyProfile()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId))
+                {
+                    return Unauthorized(ApiResponse<StudentDetailResponse>.ErrorResponse("User ID not found in token"));
+                }
+
+                var student = await _studentService.GetByIdAsync(studentId);
+                if (student == null)
+                {
+                    return NotFound(ApiResponse<StudentDetailResponse>.ErrorResponse(
+                        "Student profile not found"
+                    ));
+                }
+
+                return Ok(ApiResponse<StudentDetailResponse>.SuccessResponse(
+                    student,
+                    "Student profile retrieved successfully"
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving student profile for current user");
+                return StatusCode(500, ApiResponse<StudentDetailResponse>.ErrorResponse(
+                    "An error occurred while retrieving your profile"
                 ));
             }
         }

@@ -9,8 +9,8 @@ namespace GradeSense.API.Validators.Student
         {
             RuleFor(x => x.EnrollmentNumber)
                 .MaximumLength(255).WithMessage("Enrollment number cannot exceed 255 characters")
-                .Matches(@"^[A-Z0-9-]+$")
-                .WithMessage("Enrollment number must contain only uppercase letters, numbers, and hyphens")
+                .Matches(@"^[A-Za-z0-9-]+$")
+                .WithMessage("Enrollment number must contain only letters, numbers, and hyphens")
                 .When(x => !string.IsNullOrEmpty(x.EnrollmentNumber));
 
             RuleFor(x => x.AdmissionYear)

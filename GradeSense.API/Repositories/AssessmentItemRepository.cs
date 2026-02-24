@@ -60,6 +60,19 @@ namespace GradeSense.API.Repositories
                 query = query.Where(ai => ai.EvaluationSchemeId == filter.EvaluationSchemeId.Value);
             }
 
+            // Filter by multiple evaluation scheme IDs
+            if (!string.IsNullOrWhiteSpace(filter.EvaluationSchemeIds))
+            {
+                var ids = filter.EvaluationSchemeIds.Split(',')
+                    .Select(s => int.TryParse(s.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0)
+                    .ToList();
+                if (ids.Count > 0)
+                {
+                    query = query.Where(ai => ids.Contains(ai.EvaluationSchemeId));
+                }
+            }
+
             if (filter.CourseOfferingId.HasValue)
             {
                 query = query.Where(ai => ai.EvaluationScheme.CourseOfferingId == filter.CourseOfferingId.Value);

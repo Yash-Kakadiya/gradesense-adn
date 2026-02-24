@@ -31,6 +31,7 @@ import { Card, Button, ExportDropdown } from '@/components/common'
 import { Table, Pagination, ConfirmDialog } from '@/components/common'
 import { ROUTES } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 import { useModal, useDebounce, usePagination } from '@/hooks'
 import CourseOfferingDetailModal from '@/components/course-offerings/CourseOfferingDetailModal'
 
@@ -154,7 +155,7 @@ const CourseOfferingsPage = () => {
             deleteModal.close()
         },
         onError: (error) => {
-            toast.error(error.response?.data?.message || 'Failed to delete course offering')
+            toast.error(getErrorMessage(error))
         },
     })
 
@@ -177,10 +178,10 @@ const CourseOfferingsPage = () => {
     // Export to CSV
     const handleExportCsv = async () => {
         const blob = await exportCourseOfferingsToCsv({
-            batchId: batchFilter ? parseInt(batchFilter) : null,
-            subjectId: subjectFilter ? parseInt(subjectFilter) : null,
-            academicYear: academicYearFilter || null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            batchId: batchFilter ? parseInt(batchFilter) : undefined,
+            subjectId: subjectFilter ? parseInt(subjectFilter) : undefined,
+            academicYear: academicYearFilter || undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `course_offerings_export_${new Date().toISOString().split('T')[0]}.csv`)
     }
@@ -188,10 +189,10 @@ const CourseOfferingsPage = () => {
     // Export to Excel
     const handleExportExcel = async () => {
         const blob = await exportCourseOfferingsToExcel({
-            batchId: batchFilter ? parseInt(batchFilter) : null,
-            subjectId: subjectFilter ? parseInt(subjectFilter) : null,
-            academicYear: academicYearFilter || null,
-            isActive: statusFilter === '' ? null : statusFilter === 'active'
+            batchId: batchFilter ? parseInt(batchFilter) : undefined,
+            subjectId: subjectFilter ? parseInt(subjectFilter) : undefined,
+            academicYear: academicYearFilter || undefined,
+            isActive: statusFilter === '' ? undefined : statusFilter === 'active'
         })
         downloadBlob(blob, `course_offerings_export_${new Date().toISOString().split('T')[0]}.xlsx`)
     }

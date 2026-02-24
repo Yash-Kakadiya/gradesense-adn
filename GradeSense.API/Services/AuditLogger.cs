@@ -103,6 +103,37 @@ public class AuditLogger : IAuditLogger
         }
     }
 
+    public async Task LogWithActorAsync(string action, string entityName, string entityId, int actorUserId, string? details = null)
+    {
+        try
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+
+            var auditLog = new AuditLog
+            {
+                Action = action,
+                EntityName = entityName,
+                EntityId = entityId,
+                ActorUserId = actorUserId,
+                OccurredAt = DateTime.Now,
+                CreatedAt = DateTime.Now,
+                Ipaddress = GetClientIpAddress(httpContext),
+                UserAgent = httpContext?.Request?.Headers["User-Agent"].ToString(),
+                Reason = details
+            };
+
+            _context.AuditLogs.Add(auditLog);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Audit log created: {Action} on {EntityName} ({EntityId}) by user {UserId}",
+                action, entityName, entityId, actorUserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create audit log for {Action} on {EntityName}", action, entityName);
+        }
+    }
+
     public async Task LogUpdateAsync(string entityName, string entityId, object oldEntity, object newEntity, string? details = null)
     {
         try

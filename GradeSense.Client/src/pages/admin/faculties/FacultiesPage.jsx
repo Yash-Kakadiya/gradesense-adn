@@ -47,6 +47,7 @@ import {
     Award,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
@@ -427,8 +428,8 @@ const FacultiesPage = () => {
             deleteModal.close()
             setSelectedFaculties([])
         },
-        onError: () => {
-            toast.error('Failed to delete faculty')
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
         },
     })
 
