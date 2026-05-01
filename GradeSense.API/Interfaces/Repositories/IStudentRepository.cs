@@ -9,6 +9,7 @@ namespace GradeSense.API.Interfaces.Repositories
         Task<Student?> GetByEnrollmentNumberAsync(string enrollmentNumber);
         Task<Student?> GetByUserIdAsync(int userId);
         Task<(List<Student> Students, int TotalCount)> GetAllAsync(StudentFilterRequest filter);
+        Task<List<Student>> GetAllStudentsForLookupAsync();
         Task<Student> CreateAsync(Student student);
         Task<Student> UpdateAsync(Student student);
         Task<bool> DeleteAsync(int id);

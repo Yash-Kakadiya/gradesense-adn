@@ -6,22 +6,21 @@ import {
     X,
     SlidersHorizontal,
     RefreshCw,
-    Building2,
     Mail,
     Phone,
     Hash,
     Users,
     UserCheck,
+    Building2,
 } from 'lucide-react'
-import { Card, Badge, Button, Select } from '@/components/common'
+import { Card, Badge, Button, Select, Pagination } from '@/components/common'
 import { studentService } from '@/services/studentService'
 import { departmentService } from '@/services/departmentService'
 import StudentDetailModal from '@/components/students/StudentDetailModal'
 import { useDebounce } from '@/hooks/useDebounce'
+import { API_URL } from '@/utils/constants'
 import toast from 'react-hot-toast'
 import { cn } from '@/utils/helpers'
-
-const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
 
 // Stats Card Component
 const StatsCard = ({ icon: Icon, label, value, color, loading }) => (
@@ -45,11 +44,11 @@ const StatsCard = ({ icon: Icon, label, value, color, loading }) => (
 export default function FacultyAllStudentsPage() {
     // State
     const [searchInput, setSearchInput] = useState('')
-    const [departmentFilter, setDepartmentFilter] = useState('')
     const [statusFilter, setStatusFilter] = useState('')
+    const [departmentFilter, setDepartmentFilter] = useState('')
     const [showFilters, setShowFilters] = useState(false)
     const [page, setPage] = useState(1)
-    const pageSize = 10
+    const [pageSize, setPageSize] = useState(10)
 
     // View modal state
     const [isViewModalOpen, setIsViewModalOpen] = useState(false)
@@ -58,27 +57,30 @@ export default function FacultyAllStudentsPage() {
     // Debounced search
     const debouncedSearch = useDebounce(searchInput, 300)
 
+    // Fetch departments for filter
+    const { data: departmentsData } = useQuery({
+        queryKey: ['departments-for-filter'],
+        queryFn: () => departmentService.getAll({ pageSize: 100 }),
+    })
+
+    const departments = useMemo(() =>
+        departmentsData?.Data?.Data || departmentsData?.Data || [],
+        [departmentsData])
+
     // Fetch students
     const { data, isLoading, refetch } = useQuery({
-        queryKey: ['faculty-all-students', debouncedSearch, departmentFilter, statusFilter, page],
+        queryKey: ['faculty-all-students', debouncedSearch, statusFilter, departmentFilter, page, pageSize],
         queryFn: () =>
             studentService.getAll({
                 pageNumber: page,
                 pageSize,
                 searchTerm: debouncedSearch || undefined,
-                departmentId: departmentFilter ? parseInt(departmentFilter) : undefined,
                 status: statusFilter === 'active' ? 'Active' : statusFilter === 'inactive' ? 'Inactive' : undefined,
+                departmentId: departmentFilter || undefined,
             }),
     })
 
-    // Fetch departments for filter
-    const { data: departmentsData } = useQuery({
-        queryKey: ['departments'],
-        queryFn: () => departmentService.getAll({ pageSize: 100 }),
-    })
-
     const students = data?.Data?.Data || []
-    const departments = departmentsData?.Data?.Data || []
     const totalItems = data?.Data?.TotalRecords || 0
     const totalPages = data?.Data?.TotalPages || 1
 
@@ -87,9 +89,8 @@ export default function FacultyAllStudentsPage() {
         return {
             total: totalItems,
             onPage: students.length,
-            departments: departments.length,
         }
-    }, [students, totalItems, departments])
+    }, [students, totalItems])
 
     const handleRefresh = () => {
         refetch()
@@ -98,8 +99,8 @@ export default function FacultyAllStudentsPage() {
 
     const clearFilters = () => {
         setSearchInput('')
-        setDepartmentFilter('')
         setStatusFilter('')
+        setDepartmentFilter('')
     }
 
     const handleViewStudent = (student) => {
@@ -112,18 +113,18 @@ export default function FacultyAllStudentsPage() {
         setViewStudentId(null)
     }
 
-    const hasActiveFilters = searchInput || departmentFilter || statusFilter
-
-    const departmentOptions = [
-        { value: '', label: 'All Departments' },
-        ...departments.map((dept) => ({ value: dept.Id.toString(), label: dept.Name })),
-    ]
+    const hasActiveFilters = searchInput || statusFilter || departmentFilter
 
     const statusOptions = [
         { value: '', label: 'All Status' },
         { value: 'active', label: 'Active' },
         { value: 'inactive', label: 'Inactive' },
     ]
+
+    const departmentOptions = useMemo(() => [
+        { value: '', label: 'All Departments' },
+        ...departments.map(d => ({ value: d.Id?.toString(), label: d.Name }))
+    ], [departments])
 
     return (
         <div className="space-y-6 animate-fadeIn">
@@ -136,14 +137,14 @@ export default function FacultyAllStudentsPage() {
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">All Students</h1>
-                            <p className="text-gray-500">View student records across all departments</p>
+                            <p className="text-gray-500">View student records</p>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
                 <StatsCard
                     icon={GraduationCap}
                     label="Total Students"
@@ -156,13 +157,6 @@ export default function FacultyAllStudentsPage() {
                     label="Showing"
                     value={stats.onPage}
                     color="from-blue-500 to-indigo-600"
-                    loading={isLoading}
-                />
-                <StatsCard
-                    icon={Building2}
-                    label="Departments"
-                    value={stats.departments}
-                    color="from-purple-500 to-pink-600"
                     loading={isLoading}
                 />
             </div>
@@ -227,21 +221,21 @@ export default function FacultyAllStudentsPage() {
                     {showFilters && (
                         <div className="mt-4 pt-4 border-t border-gray-100">
                             <div className="flex flex-wrap items-end gap-4">
-                                <div className="w-56">
-                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Department</label>
-                                    <Select
-                                        value={departmentFilter}
-                                        onChange={(e) => setDepartmentFilter(e.target.value)}
-                                        options={departmentOptions}
-                                        className="bg-gray-50 border-0"
-                                    />
-                                </div>
                                 <div className="w-40">
                                     <label className="block text-xs font-medium text-gray-500 mb-1.5">Status</label>
                                     <Select
                                         value={statusFilter}
                                         onChange={(e) => setStatusFilter(e.target.value)}
                                         options={statusOptions}
+                                        className="bg-gray-50 border-0"
+                                    />
+                                </div>
+                                <div className="w-48">
+                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Department</label>
+                                    <Select
+                                        value={departmentFilter}
+                                        onChange={(e) => setDepartmentFilter(e.target.value)}
+                                        options={departmentOptions}
                                         className="bg-gray-50 border-0"
                                     />
                                 </div>
@@ -383,31 +377,18 @@ export default function FacultyAllStudentsPage() {
 
                     {/* Pagination */}
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                            <p className="text-sm text-gray-500">
-                                Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, totalItems)} of {totalItems} students
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                >
-                                    Previous
-                                </Button>
-                                <span className="text-sm text-gray-600">
-                                    Page {page} of {totalPages}
-                                </span>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                    disabled={page === totalPages}
-                                >
-                                    Next
-                                </Button>
-                            </div>
+                        <div className="border-t border-gray-100">
+                            <Pagination
+                                currentPage={page}
+                                totalPages={totalPages}
+                                totalItems={totalItems}
+                                pageSize={pageSize}
+                                onPageChange={setPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setPage(1)
+                                }}
+                            />
                         </div>
                     )}
                 </Card>

@@ -29,6 +29,10 @@ api.interceptors.request.use(
 // Response interceptor - handle errors
 api.interceptors.response.use(
     (response) => {
+        // For blob responses, return full response to access headers for filename
+        if (response.config?.responseType === 'blob') {
+            return response
+        }
         return response.data
     },
     (error) => {

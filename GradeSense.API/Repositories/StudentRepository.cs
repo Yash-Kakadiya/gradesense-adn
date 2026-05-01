@@ -96,6 +96,15 @@ namespace GradeSense.API.Repositories
             return (students, totalCount);
         }
 
+        public async Task<List<Student>> GetAllStudentsForLookupAsync()
+        {
+            return await _context.Students
+                .Include(s => s.IdNavigation)
+                .Include(s => s.Department)
+                .Where(s => s.DeletedAt == null && s.Status == "Active")
+                .ToListAsync();
+        }
+
         public async Task<Student> CreateAsync(Student student)
         {
             student.CreatedAt = DateTime.Now;

@@ -30,6 +30,7 @@ namespace GradeSense.API.Services
             var data = evaluationSchemes.Select(es => new EvaluationSchemeListResponse
             {
                 Id = es.Id,
+                CourseOfferingId = es.CourseOfferingId,
                 SubjectCode = es.CourseOffering.Subject.Code,
                 SubjectName = es.CourseOffering.Subject.Name,
                 BatchName = es.CourseOffering.Batch.Name,

@@ -65,4 +65,52 @@ export const studentMarkService = {
     getByCourseOffering: (courseOfferingId) => {
         return api.get(`${API_ENDPOINTS.STUDENT_MARKS}/course-offering/${courseOfferingId}`)
     },
+
+    /**
+     * Download CSV template for grade import
+     * @param {number} assessmentItemId
+     * @returns {Promise<Blob>}
+     */
+    getTemplate: async (assessmentItemId) => {
+        const response = await api.get(`${API_ENDPOINTS.STUDENT_MARKS}/import/template/${assessmentItemId}`, {
+            responseType: 'blob'
+        })
+        return response
+    },
+
+    /**
+     * Download Excel template for grade import
+     * @param {number} assessmentItemId
+     * @returns {Promise<Blob>}
+     */
+    getTemplateExcel: async (assessmentItemId) => {
+        const response = await api.get(`${API_ENDPOINTS.STUDENT_MARKS}/import/template/excel/${assessmentItemId}`, {
+            responseType: 'blob'
+        })
+        return response
+    },
+
+    /**
+     * Validate import file and get preview
+     * @param {number} assessmentItemId
+     * @param {File} file
+     * @returns {Promise}
+     */
+    validateImport: (assessmentItemId, file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post(`${API_ENDPOINTS.STUDENT_MARKS}/import/validate`, formData, {
+            params: { assessmentItemId },
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+    },
+
+    /**
+     * Execute grade import with conflict resolution
+     * @param {Object} data - { assessmentItemId, graderId, conflictResolution, rows }
+     * @returns {Promise}
+     */
+    executeImport: (data) => {
+        return api.post(`${API_ENDPOINTS.STUDENT_MARKS}/import/execute`, data)
+    },
 }

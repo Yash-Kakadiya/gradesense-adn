@@ -35,7 +35,10 @@ const AssessmentCard = ({ assessment, onEdit, onDelete, onView }) => {
     const isPending = !isOverdue && assessment.DueDate && new Date(assessment.DueDate) > new Date()
 
     return (
-        <Card className="group hover:shadow-lg transition-all duration-300 overflow-hidden">
+        <Card
+            className="group hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer"
+            onClick={() => onView(assessment)}
+        >
             {/* Top colored bar */}
             <div className={cn(
                 "h-1.5",
@@ -98,7 +101,7 @@ const AssessmentCard = ({ assessment, onEdit, onDelete, onView }) => {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                <div className="flex items-center gap-2 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" className="flex-1" onClick={() => onView(assessment)}>
                         <Eye className="w-4 h-4 mr-1" /> View
                     </Button>
@@ -438,7 +441,7 @@ const FacultyAssessmentsPage = () => {
     const queryClient = useQueryClient()
     const { user } = useAuth()
     const [searchTerm, setSearchTerm] = useState('')
-    const [schemeFilter, setSchemeFilter] = useState('')
+    const [courseFilter, setCourseFilter] = useState('')
     const [typeFilter, setTypeFilter] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
     const [isFormOpen, setIsFormOpen] = useState(false)
@@ -446,14 +449,14 @@ const FacultyAssessmentsPage = () => {
     const [deleteTarget, setDeleteTarget] = useState(null)
     const [viewAssessment, setViewAssessment] = useState(null)
     const [isViewModalOpen, setIsViewModalOpen] = useState(false)
-    const pageSize = 12
+    const [pageSize, setPageSize] = useState(12)
     const debouncedSearch = useDebounce(searchTerm, 300)
 
     // Fetch faculty's courses
     const { data: assignmentsData } = useQuery({
-        queryKey: ['faculty-assignments', user?.id],
-        queryFn: () => facultyAssignmentService.getByFaculty(user?.id),
-        enabled: !!user?.id,
+        queryKey: ['faculty-assignments', user?.facultyId],
+        queryFn: () => facultyAssignmentService.getByFaculty(user?.facultyId),
+        enabled: !!user?.facultyId,
     })
 
     // Get course offering IDs
@@ -476,43 +479,62 @@ const FacultyAssessmentsPage = () => {
         return schemesData?.Data?.Data || schemesData?.Data || []
     }, [schemesData])
 
+    // Create deduplicated course options from evaluation schemes
+    const courseOptions = useMemo(() => {
+        const seen = new Set()
+        return evaluationSchemes
+            .filter(scheme => {
+                if (seen.has(scheme.CourseOfferingId)) return false
+                seen.add(scheme.CourseOfferingId)
+                return true
+            })
+            .map(scheme => ({
+                value: scheme.CourseOfferingId?.toString(),
+                label: `${scheme.SubjectCode} - ${scheme.SubjectName} (${scheme.BatchName})`,
+            }))
+    }, [evaluationSchemes])
+
+    // Get scheme IDs for selected course
+    const selectedCourseSchemeIds = useMemo(() => {
+        if (!courseFilter) return evaluationSchemes.map(s => s.Id)
+        return evaluationSchemes
+            .filter(s => s.CourseOfferingId?.toString() === courseFilter)
+            .map(s => s.Id)
+    }, [evaluationSchemes, courseFilter])
+
     // Fetch assessment items
     const { data: assessmentsData, isLoading, refetch } = useQuery({
-        queryKey: ['faculty-assessments', evaluationSchemes.map(s => s.Id), currentPage, pageSize],
+        queryKey: ['faculty-assessments', selectedCourseSchemeIds, currentPage, pageSize],
         queryFn: async () => {
-            if (evaluationSchemes.length === 0) return { Data: [], TotalCount: 0 }
-            const schemeIds = schemeFilter || evaluationSchemes.map(s => s.Id).join(',')
+            if (selectedCourseSchemeIds.length === 0) return { Data: [], TotalRecords: 0 }
             return assessmentItemService.getAll({
-                evaluationSchemeIds: schemeIds,
+                evaluationSchemeIds: selectedCourseSchemeIds.join(','),
                 pageNumber: currentPage,
                 pageSize,
             })
         },
-        enabled: evaluationSchemes.length > 0,
+        enabled: selectedCourseSchemeIds.length > 0,
     })
 
     const assessments = useMemo(() => {
         return assessmentsData?.Data?.Data || assessmentsData?.Data || []
     }, [assessmentsData])
 
-    // Filter assessments
+    // Filter assessments (API already filters by course, just search and type here)
     const filteredAssessments = useMemo(() => {
         return assessments.filter(assessment => {
             const matchesSearch = !debouncedSearch ||
                 assessment.Name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                 assessment.SubjectName?.toLowerCase().includes(debouncedSearch.toLowerCase())
 
-            const matchesScheme = !schemeFilter ||
-                assessment.EvaluationSchemeId?.toString() === schemeFilter
-
             const matchesType = !typeFilter ||
                 assessment.CalculationType === typeFilter
 
-            return matchesSearch && matchesScheme && matchesType
+            return matchesSearch && matchesType
         })
-    }, [assessments, debouncedSearch, schemeFilter, typeFilter])
+    }, [assessments, debouncedSearch, typeFilter])
 
-    const totalCount = assessmentsData?.Data?.TotalCount || filteredAssessments.length
+    const totalCount = assessmentsData?.Data?.TotalRecords || filteredAssessments.length
     const totalPages = Math.ceil(totalCount / pageSize)
 
     // Stats
@@ -706,13 +728,15 @@ const FacultyAssessmentsPage = () => {
                                 />
                             </div>
                             <select
-                                value={schemeFilter}
-                                onChange={(e) => setSchemeFilter(e.target.value)}
+                                value={courseFilter}
+                                onChange={(e) => setCourseFilter(e.target.value)}
                                 className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                             >
                                 <option value="">All Courses</option>
-                                {evaluationSchemes.map(scheme => (
-                                    <option key={scheme.Id} value={scheme.Id}>{scheme.SubjectName}</option>
+                                {courseOptions.map(opt => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
                                 ))}
                             </select>
                             <select
@@ -744,12 +768,12 @@ const FacultyAssessmentsPage = () => {
                     icon={ClipboardCheck}
                     title="No assessments found"
                     description={
-                        searchTerm || schemeFilter || typeFilter
+                        searchTerm || courseFilter || typeFilter
                             ? 'Try adjusting your search or filters'
                             : 'Create your first assessment to get started'
                     }
                     action={
-                        !searchTerm && !schemeFilter && !typeFilter ? (
+                        !searchTerm && !courseFilter && !typeFilter ? (
                             <Button variant="primary" onClick={handleCreate}>
                                 <Plus className="w-4 h-4 mr-2" />
                                 Create Assessment
@@ -775,7 +799,13 @@ const FacultyAssessmentsPage = () => {
                             <Pagination
                                 currentPage={currentPage}
                                 totalPages={totalPages}
+                                totalItems={totalCount}
+                                pageSize={pageSize}
                                 onPageChange={setCurrentPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setCurrentPage(1)
+                                }}
                             />
                         </div>
                     )}

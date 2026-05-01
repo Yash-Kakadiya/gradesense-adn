@@ -12,4 +12,14 @@ public class UserResponse
     public bool IsActive { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    
+    /// <summary>
+    /// Faculty ID (only populated for Faculty role users)
+    /// </summary>
+    public int? FacultyId { get; set; }
+    
+    /// <summary>
+    /// Student ID (only populated for Student role users)
+    /// </summary>
+    public int? StudentId { get; set; }
 }

@@ -1,13 +1,15 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Card, Badge, Button, Modal, EmptyState } from '@/components/common'
+import { Card, Badge, Button, Modal, EmptyState, BulkImportModal } from '@/components/common'
 import { useAuth } from '@/context/AuthContext'
 import { useDebounce, useModal } from '@/hooks'
 import { facultyAssignmentService } from '@/services/facultyAssignmentService'
 import { assessmentItemService } from '@/services/evaluationService'
 import { studentMarkService } from '@/services/studentMarkService'
 import { courseEnrollmentService } from '@/services/courseEnrollmentService'
+import { exportGradesToCsv, exportGradesToExcel, exportAssessmentGrades, handleExportDownload } from '@/services/facultyExportService'
+import StudentDetailModal from '@/components/students/StudentDetailModal'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { cn } from '@/utils/helpers'
 import toast from 'react-hot-toast'
@@ -16,6 +18,7 @@ import {
     Download,
     Upload,
     FileSpreadsheet,
+    FileText,
     BookOpen,
     GraduationCap,
     Search,
@@ -52,7 +55,7 @@ const GradeInput = ({ value, onChange, maxMarks, isGraded }) => {
     }
 
     return (
-        <div className="relative">
+        <div className="relative" onClick={(e) => e.stopPropagation()}>
             <input
                 type="number"
                 min="0"
@@ -72,15 +75,22 @@ const GradeInput = ({ value, onChange, maxMarks, isGraded }) => {
 }
 
 // Student Grade Row
-const StudentGradeRow = ({ student, grade, maxMarks, onChange, index }) => {
+const StudentGradeRow = ({ student, grade, maxMarks, onChange, onRowClick, index }) => {
     const isGraded = student.CurrentGrade !== null
     const percentage = grade ? ((parseFloat(grade) / maxMarks) * 100).toFixed(0) : null
 
+    const handleInputClick = (e) => {
+        e.stopPropagation()
+    }
+
     return (
-        <tr className={cn(
-            "hover:bg-gray-50 transition-colors",
-            index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-        )}>
+        <tr
+            className={cn(
+                "hover:bg-gray-50 transition-colors cursor-pointer",
+                index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+            )}
+            onClick={() => onRowClick && onRowClick(student)}
+        >
             <td className="px-4 py-3">
                 <span className="text-sm text-gray-500">{index + 1}</span>
             </td>
@@ -137,14 +147,85 @@ const FacultyGradesPage = () => {
     const [selectedAssessment, setSelectedAssessment] = useState('')
     const [searchTerm, setSearchTerm] = useState('')
     const [grades, setGrades] = useState({})
+    const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
+    const [isExporting, setIsExporting] = useState(false)
+    const exportDropdownRef = useRef(null)
     const debouncedSearch = useDebounce(searchTerm, 300)
     const bulkUploadModal = useModal()
 
+    // Student detail modal state
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+    const [viewStudentId, setViewStudentId] = useState(null)
+
+    // Student detail modal handlers
+    const handleViewStudent = (student) => {
+        setViewStudentId(student.StudentId || student.Id)
+        setIsViewModalOpen(true)
+    }
+
+    const handleCloseViewModal = () => {
+        setIsViewModalOpen(false)
+        setViewStudentId(null)
+    }
+
+    // Close export dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
+                setIsExportDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    // Export handlers
+    const handleExportGrades = async (format, exportType = 'all') => {
+        if (!selectedCourse) {
+            toast.error('Please select a course to export grades')
+            setIsExportDropdownOpen(false)
+            return
+        }
+
+        setIsExporting(true)
+        setIsExportDropdownOpen(false)
+
+        try {
+            const courseId = parseInt(selectedCourse)
+            const assessmentId = selectedAssessment ? parseInt(selectedAssessment) : null
+
+            let response
+            let defaultFilename
+
+            if (exportType === 'assessment' && assessmentId) {
+                // Export specific assessment grades only
+                response = await exportAssessmentGrades(assessmentId)
+                defaultFilename = `assessment_grades_${assessmentId}.xlsx`
+            } else {
+                // Export all grades for course (no assessmentItemId filter)
+                response = format === 'csv'
+                    ? await exportGradesToCsv(courseId, {})
+                    : await exportGradesToExcel(courseId, {})
+                defaultFilename = format === 'csv'
+                    ? `grades_${courseId}.csv`
+                    : `grades_${courseId}.xlsx`
+            }
+
+            handleExportDownload(response, defaultFilename)
+            toast.success('Export successful!')
+        } catch (error) {
+            console.error('Export failed:', error)
+            toast.error('Failed to export grades. Please try again.')
+        } finally {
+            setIsExporting(false)
+        }
+    }
+
     // Fetch faculty's course assignments
     const { data: assignmentsData, isLoading: loadingAssignments, refetch: refetchAssignments } = useQuery({
-        queryKey: ['faculty-assignments-grades', user?.id],
-        queryFn: () => facultyAssignmentService.getByFaculty(user?.id),
-        enabled: !!user?.id,
+        queryKey: ['faculty-assignments-grades', user?.facultyId],
+        queryFn: () => facultyAssignmentService.getByFaculty(user?.facultyId),
+        enabled: !!user?.facultyId,
     })
 
     // Fetch assessment items for selected course
@@ -302,12 +383,21 @@ const FacultyGradesPage = () => {
         return { graded, total, avgScore, maxMarks }
     }, [grades, students, selectedAssessmentDetails])
 
-    // Course and assessment options
-    const courseOptions = courseAssignments.map((a) => ({
-        value: a.CourseOfferingId?.toString(),
-        label: `${a.SubjectCode || ''} - ${a.SubjectName}`,
-        batch: a.BatchName,
-    }))
+    // Course and assessment options - deduplicate by CourseOfferingId and add batch info
+    const courseOptions = useMemo(() => {
+        const seen = new Set()
+        return courseAssignments
+            .filter((a) => {
+                if (seen.has(a.CourseOfferingId)) return false
+                seen.add(a.CourseOfferingId)
+                return true
+            })
+            .map((a) => ({
+                value: a.CourseOfferingId?.toString(),
+                label: `${a.SubjectCode || ''} - ${a.SubjectName} (${a.BatchName})`,
+                batch: a.BatchName,
+            }))
+    }, [courseAssignments])
 
     const assessmentOptions = assessments.map((a) => ({
         value: a.Id?.toString(),
@@ -333,14 +423,60 @@ const FacultyGradesPage = () => {
                         Enter and manage student grades for your courses
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    onClick={() => refetchAssignments()}
-                    disabled={loadingAssignments}
-                >
-                    <RefreshCcw className={cn('w-4 h-4 mr-2', loadingAssignments && 'animate-spin')} />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    {/* Export Dropdown */}
+                    <div className="relative" ref={exportDropdownRef}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            disabled={isExporting || !selectedCourse}
+                            title={!selectedCourse ? 'Select a course to export' : 'Export grades'}
+                        >
+                            {isExporting ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Export
+                            <ChevronDown className="w-4 h-4 ml-1" />
+                        </Button>
+                        {isExportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
+                                <button
+                                    onClick={() => handleExportGrades('csv', 'all')}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <FileText className="w-4 h-4 text-gray-500" />
+                                    Export All Grades (CSV)
+                                </button>
+                                <button
+                                    onClick={() => handleExportGrades('excel', 'all')}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                    Export All Grades (Excel)
+                                </button>
+                                {selectedAssessment && (
+                                    <button
+                                        onClick={() => handleExportGrades('excel', 'assessment')}
+                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                                    >
+                                        <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                                        Export Selected Assessment
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <Button
+                        variant="outline"
+                        onClick={() => refetchAssignments()}
+                        disabled={loadingAssignments}
+                    >
+                        <RefreshCcw className={cn('w-4 h-4 mr-2', loadingAssignments && 'animate-spin')} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* Selection Cards */}
@@ -372,7 +508,7 @@ const FacultyGradesPage = () => {
                                 <option value="">Choose a course...</option>
                                 {courseOptions.map(opt => (
                                     <option key={opt.value} value={opt.value}>
-                                        {opt.label} ({opt.batch})
+                                        {opt.label}
                                     </option>
                                 ))}
                             </select>
@@ -587,6 +723,7 @@ const FacultyGradesPage = () => {
                                             grade={grades[student.StudentId || student.Id] || ''}
                                             maxMarks={selectedAssessmentDetails?.MaxMarks || 100}
                                             onChange={(value) => handleGradeChange(student.StudentId || student.Id, value)}
+                                            onRowClick={handleViewStudent}
                                             index={index}
                                         />
                                     ))}
@@ -612,57 +749,40 @@ const FacultyGradesPage = () => {
             )}
 
             {/* Bulk Upload Modal */}
-            <Modal
+            <BulkImportModal
                 isOpen={bulkUploadModal.isOpen}
                 onClose={bulkUploadModal.close}
                 title="Import Grades"
-                size="md"
-            >
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                        Upload a CSV file with student roll numbers and their grades.
-                    </p>
+                entityName="grades"
+                onDownloadTemplate={() => studentMarkService.getTemplateExcel(selectedAssessment)}
+                onValidate={({ file }) => studentMarkService.validateImport(selectedAssessment, file)}
+                onExecuteImport={(data) => studentMarkService.executeImport({
+                    assessmentItemId: selectedAssessment,
+                    graderId: user?.facultyId,
+                    conflictResolution: data.conflictResolution,
+                    rows: data.rows.map(row => ({
+                        rowNumber: row.rowNumber,
+                        rollNumber: row.rollNumber,
+                        marksObtained: row.marksObtained,
+                        isAbsent: row.isAbsent || false,
+                        remarks: row.remarks || ''
+                    }))
+                })}
+                importContext={{ assessmentItemId: selectedAssessment }}
+                onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ['marks-for-assessment', selectedAssessment] })
+                    queryClient.invalidateQueries({ queryKey: ['course-enrollments-grades', selectedCourse] })
+                    toast.success('Grades imported successfully')
+                }}
+            />
 
-                    {/* Download Template */}
-                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                        <p className="text-sm text-blue-700 mb-2">
-                            <strong>Format:</strong> Roll Number, Marks
-                        </p>
-                        <Button variant="outline" size="sm" onClick={handleExport}>
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Template
-                        </Button>
-                    </div>
-
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
-                        <input
-                            type="file"
-                            accept=".csv,.xlsx"
-                            className="hidden"
-                            id="grade-upload"
-                        />
-                        <label htmlFor="grade-upload" className="cursor-pointer flex flex-col items-center">
-                            <div className="p-3 bg-gray-100 rounded-full mb-3">
-                                <Upload className="w-6 h-6 text-gray-500" />
-                            </div>
-                            <span className="text-sm font-medium text-gray-700">
-                                Click to upload or drag and drop
-                            </span>
-                            <span className="text-xs text-gray-500 mt-1">
-                                CSV or XLSX files only
-                            </span>
-                        </label>
-                    </div>
-
-                    <div className="flex justify-end gap-3 pt-4 border-t">
-                        <Button variant="outline" onClick={bulkUploadModal.close}>Cancel</Button>
-                        <Button variant="primary" onClick={() => toast.success('Import feature coming soon')}>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Import
-                        </Button>
-                    </div>
-                </div>
-            </Modal>
+            {/* Student Detail Modal */}
+            <StudentDetailModal
+                isOpen={isViewModalOpen}
+                onClose={handleCloseViewModal}
+                studentId={viewStudentId}
+                showEditButton={false}
+            />
         </div>
     )
 }

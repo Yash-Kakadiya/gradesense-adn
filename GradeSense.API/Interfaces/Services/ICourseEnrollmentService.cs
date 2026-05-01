@@ -12,5 +12,10 @@ namespace GradeSense.API.Interfaces.Services
         Task<CourseEnrollmentResponse> UpdateAsync(int id, UpdateCourseEnrollmentRequest request);
         Task<bool> DeleteAsync(int id);
         Task<BulkEnrollResponse> BulkEnrollAsync(BulkEnrollRequest request);
+        
+        // Bulk import methods
+        Task<byte[]> GetEnrollmentTemplateExcelAsync(int courseOfferingId);
+        Task<BulkEnrollmentValidationResponse> ValidateEnrollmentImportAsync(int courseOfferingId, Stream stream, string extension);
+        Task<BulkOperationResponse<CourseEnrollmentResponse>> ImportEnrollmentsWithValidationAsync(BulkEnrollmentImportRequest request);
     }
 }

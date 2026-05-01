@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, Badge, Button, EmptyState, Pagination, Modal } from '@/components/common'
@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import { facultyAssignmentService } from '@/services/facultyAssignmentService'
 import { studentService } from '@/services/studentService'
 import { courseEnrollmentService } from '@/services/courseEnrollmentService'
+import { exportRosterToCsv, exportRosterToExcel, handleExportDownload } from '@/services/facultyExportService'
 import { useDebounce } from '@/hooks'
 import { ROUTES } from '@/utils/constants'
 import { cn } from '@/utils/helpers'
@@ -28,6 +29,9 @@ import {
     Filter,
     RefreshCcw,
     UserCheck,
+    Download,
+    FileSpreadsheet,
+    FileText,
     Target,
     LayoutGrid,
     List,
@@ -87,15 +91,15 @@ const StudentDetailModal = ({ isOpen, onClose, student, onViewFullDetails }) => 
                         <p className="text-2xl font-bold text-gray-900">{student.AttendancePercentage?.toFixed(0) || 0}%</p>
                         <p className="text-sm text-gray-500">Attendance</p>
                     </div>
-                    <div className="p-4 bg-purple-50 rounded-xl text-center">
+                    <div className="p-4 bg-purple-50 rounded-xl text-center min-h-24">
                         <BookOpen className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                        <p className="text-lg font-bold text-gray-900 truncate" title={student.CourseName}>{student.CourseName || 'N/A'}</p>
-                        <p className="text-sm text-gray-500">Course</p>
+                        <p className="text-sm font-bold text-gray-900 break-words leading-tight">{student.CourseName || 'N/A'}</p>
+                        <p className="text-sm text-gray-500 mt-1">Course</p>
                     </div>
-                    <div className="p-4 bg-orange-50 rounded-xl text-center">
+                    <div className="p-4 bg-orange-50 rounded-xl text-center min-h-24">
                         <GraduationCap className="w-6 h-6 text-orange-600 mx-auto mb-2" />
-                        <p className="text-lg font-bold text-gray-900 truncate" title={student.BatchName}>{student.BatchName || 'N/A'}</p>
-                        <p className="text-sm text-gray-500">Batch</p>
+                        <p className="text-sm font-bold text-gray-900 break-words leading-tight">{student.BatchName || 'N/A'}</p>
+                        <p className="text-sm text-gray-500 mt-1">Batch</p>
                     </div>
                 </div>
 
@@ -122,12 +126,12 @@ const StudentDetailModal = ({ isOpen, onClose, student, onViewFullDetails }) => 
                             </div>
                         </div>
                         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                            <div className="p-2 bg-cyan-100 rounded-lg">
+                            <div className="p-2 bg-cyan-100 rounded-lg flex-shrink-0">
                                 <BookOpen className="w-5 h-5 text-cyan-600" />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                                 <p className="text-xs text-gray-500">Course</p>
-                                <p className="font-medium text-gray-900 truncate" title={student.CourseName}>{student.CourseName || 'N/A'}</p>
+                                <p className="font-medium text-gray-900 break-words">{student.CourseName || 'N/A'}</p>
                             </div>
                         </div>
                     </div>
@@ -199,7 +203,10 @@ const PerformanceBadge = ({ percentage }) => {
 
 // Student Card Component
 const StudentCard = ({ student, onViewDetails }) => (
-    <Card className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5 overflow-hidden">
+    <Card
+        className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5 overflow-hidden cursor-pointer"
+        onClick={() => onViewDetails(student)}
+    >
         <Card.Body className="p-4">
             <div className="flex items-start gap-4">
                 {/* Avatar */}
@@ -241,7 +248,7 @@ const StudentCard = ({ student, onViewDetails }) => (
                             <p className="text-xs text-gray-500">Attendance</p>
                         </div>
                         <div className="flex-1 flex justify-end">
-                            <Button variant="ghost" size="sm" onClick={() => onViewDetails(student)}>
+                            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onViewDetails(student); }}>
                                 <Eye className="w-4 h-4 mr-1" />
                                 View
                             </Button>
@@ -255,7 +262,7 @@ const StudentCard = ({ student, onViewDetails }) => (
 
 // Student Table Row
 const StudentTableRow = ({ student, onViewDetails }) => (
-    <tr className="hover:bg-gray-50 transition-colors">
+    <tr className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => onViewDetails(student)}>
         <td className="px-4 py-3">
             <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
@@ -293,7 +300,7 @@ const StudentTableRow = ({ student, onViewDetails }) => (
             <PerformanceBadge percentage={student.AverageScore || 0} />
         </td>
         <td className="px-4 py-3 text-right">
-            <Button variant="ghost" size="sm" onClick={() => onViewDetails(student)}>
+            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onViewDetails(student); }}>
                 <Eye className="w-4 h-4" />
             </Button>
         </td>
@@ -312,8 +319,22 @@ const FacultyStudentsPage = () => {
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [fullDetailStudentId, setFullDetailStudentId] = useState(null)
     const [isFullDetailModalOpen, setIsFullDetailModalOpen] = useState(false)
-    const pageSize = 12
+    const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
+    const [isExporting, setIsExporting] = useState(false)
+    const exportDropdownRef = useRef(null)
+    const [pageSize, setPageSize] = useState(12)
     const debouncedSearch = useDebounce(searchTerm, 300)
+
+    // Close export dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
+                setIsExportDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     // Handler for viewing full details
     const handleViewFullDetails = (studentId) => {
@@ -322,11 +343,41 @@ const FacultyStudentsPage = () => {
         setIsFullDetailModalOpen(true)
     }
 
+    // Export handlers
+    const handleExportRoster = async (format) => {
+        if (!courseFilter) {
+            alert('Please select a course to export the roster')
+            setIsExportDropdownOpen(false)
+            return
+        }
+
+        setIsExporting(true)
+        setIsExportDropdownOpen(false)
+
+        try {
+            const courseId = parseInt(courseFilter)
+            const response = format === 'csv'
+                ? await exportRosterToCsv(courseId)
+                : await exportRosterToExcel(courseId)
+
+            const defaultFilename = format === 'csv'
+                ? `student_roster_${courseId}.csv`
+                : `student_roster_${courseId}.xlsx`
+
+            handleExportDownload(response, defaultFilename)
+        } catch (error) {
+            console.error('Export failed:', error)
+            alert('Failed to export roster. Please try again.')
+        } finally {
+            setIsExporting(false)
+        }
+    }
+
     // Fetch faculty's course assignments
     const { data: assignmentsData } = useQuery({
-        queryKey: ['faculty-assignments', user?.id],
-        queryFn: () => facultyAssignmentService.getByFaculty(user?.id),
-        enabled: !!user?.id,
+        queryKey: ['faculty-assignments', user?.facultyId],
+        queryFn: () => facultyAssignmentService.getByFaculty(user?.facultyId),
+        enabled: !!user?.facultyId,
     })
 
     // Get course IDs for filtering
@@ -348,7 +399,7 @@ const FacultyStudentsPage = () => {
     const { data: enrollmentsData, isLoading, refetch } = useQuery({
         queryKey: ['faculty-students', courseIds, courseFilter, currentPage, pageSize],
         queryFn: async () => {
-            if (courseIds.length === 0) return { Data: [], TotalCount: 0 }
+            if (courseIds.length === 0) return { Data: [], TotalRecords: 0 }
 
             // Fetch enrollments for specific course or all courses
             const courseIdParam = courseFilter || courseIds[0]
@@ -359,6 +410,22 @@ const FacultyStudentsPage = () => {
             })
         },
         enabled: courseIds.length > 0,
+    })
+
+    // Stats query with large page size so cards reflect full dataset
+    const { data: studentsStatsData } = useQuery({
+        queryKey: ['faculty-students-stats', courseIds, courseFilter],
+        queryFn: async () => {
+            if (courseIds.length === 0) return { Data: [], TotalRecords: 0 }
+            const courseIdParam = courseFilter || courseIds[0]
+            return courseEnrollmentService.getAll({
+                courseOfferingId: courseIdParam,
+                pageNumber: 1,
+                pageSize: 5000,
+            })
+        },
+        enabled: courseIds.length > 0,
+        staleTime: 60_000,
     })
 
     // Process students data
@@ -405,23 +472,25 @@ const FacultyStudentsPage = () => {
         })
     }, [students, debouncedSearch, courseFilter, performanceFilter])
 
-    const totalCount = enrollmentsData?.Data?.TotalCount || filteredStudents.length
+    const totalCount = enrollmentsData?.Data?.TotalRecords || filteredStudents.length
     const totalPages = Math.ceil(totalCount / pageSize)
 
     // Stats
+    const statsStudents = useMemo(() => studentsStatsData?.Data?.Data || [], [studentsStatsData])
     const stats = useMemo(() => {
-        const atRiskCount = students.filter(s => (s.AverageScore || 0) < 50).length
-        const excellentCount = students.filter(s => (s.AverageScore || 0) >= 85).length
-        const avgAttendance = students.length > 0
-            ? students.reduce((sum, s) => sum + (s.AttendancePercentage || 0), 0) / students.length
+        const total = studentsStatsData?.Data?.TotalRecords || statsStudents.length
+        const atRiskCount = statsStudents.filter(s => (s.AverageScore || 0) < 50).length
+        const excellentCount = statsStudents.filter(s => (s.AverageScore || 0) >= 85).length
+        const avgAttendance = statsStudents.length > 0
+            ? statsStudents.reduce((sum, s) => sum + (s.AttendancePercentage || 0), 0) / statsStudents.length
             : 0
         return {
-            total: students.length,
+            total,
             atRisk: atRiskCount,
             excellent: excellentCount,
             avgAttendance: avgAttendance.toFixed(0),
         }
-    }, [students])
+    }, [statsStudents, studentsStatsData])
 
     const handleViewDetails = (student) => {
         setSelectedStudent(student)
@@ -453,14 +522,51 @@ const FacultyStudentsPage = () => {
                         View and monitor students enrolled in your courses
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    onClick={() => refetch()}
-                    disabled={isLoading}
-                >
-                    <RefreshCcw className={cn('w-4 h-4 mr-2', isLoading && 'animate-spin')} />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    {/* Export Dropdown */}
+                    <div className="relative" ref={exportDropdownRef}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            disabled={isExporting || !courseFilter}
+                            title={!courseFilter ? 'Select a course to export' : 'Export roster'}
+                        >
+                            {isExporting ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Export
+                            <ChevronDown className="w-4 h-4 ml-1" />
+                        </Button>
+                        {isExportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
+                                <button
+                                    onClick={() => handleExportRoster('csv')}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <FileText className="w-4 h-4 text-gray-500" />
+                                    Export as CSV
+                                </button>
+                                <button
+                                    onClick={() => handleExportRoster('excel')}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                    Export as Excel
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    <Button
+                        variant="outline"
+                        onClick={() => refetch()}
+                        disabled={isLoading}
+                    >
+                        <RefreshCcw className={cn('w-4 h-4 mr-2', isLoading && 'animate-spin')} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* Stats */}
@@ -615,7 +721,13 @@ const FacultyStudentsPage = () => {
                             <Pagination
                                 currentPage={currentPage}
                                 totalPages={totalPages}
+                                totalItems={totalCount}
+                                pageSize={pageSize}
                                 onPageChange={setCurrentPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setCurrentPage(1)
+                                }}
                             />
                         </div>
                     )}
@@ -651,7 +763,13 @@ const FacultyStudentsPage = () => {
                             <Pagination
                                 currentPage={currentPage}
                                 totalPages={totalPages}
+                                totalItems={totalCount}
+                                pageSize={pageSize}
                                 onPageChange={setCurrentPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setCurrentPage(1)
+                                }}
                             />
                         </div>
                     )}

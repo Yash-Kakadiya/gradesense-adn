@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Faculty")]
+    [Authorize(Roles = "Admin,Faculty,Student")]
     public class FacultyAssignmentsController : ControllerBase
     {
         private readonly IFacultyAssignmentService _facultyAssignmentService;
@@ -27,6 +27,7 @@ namespace GradeSense.API.Controllers
         /// Get all faculty assignments with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Faculty,Student")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<FacultyAssignmentListResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<FacultyAssignmentListResponse>>>> GetAll(
             [FromQuery] FacultyAssignmentFilterRequest filter)

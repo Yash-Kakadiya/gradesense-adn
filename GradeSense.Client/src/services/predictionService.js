@@ -43,6 +43,16 @@ const predictionService = {
     },
 
     /**
+     * Create a new prediction (faculty manual override)
+     * @param {Object} data - Prediction data
+     * @returns {Promise<Object>} Created prediction
+     */
+    create: async (data) => {
+        const response = await api.post(API_ENDPOINTS.PREDICTIONS, data)
+        return response.data
+    },
+
+    /**
      * Generate new predictions for a course offering
      * @param {number} courseOfferingId - Course Offering ID
      * @returns {Promise<Object>} Generated predictions

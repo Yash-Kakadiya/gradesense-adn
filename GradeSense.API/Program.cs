@@ -62,6 +62,7 @@ builder.Services
     {
         options.SaveToken = true;
         options.RequireHttpsMetadata = true; // Set to true in production
+        options.MapInboundClaims = false; // Prevent claim type mapping (keep 'sub' instead of mapping to long URI)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -73,7 +74,9 @@ builder.Services
             ValidAudience = jwtSettings.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwtSettings.SecretKey)
-            )
+            ),
+            RoleClaimType = "role", // Use the lowercase 'role' claim for authorization
+            NameClaimType = "name" // Use 'name' claim for User.Identity.Name
         };
 
         // Custom event handlers
@@ -175,6 +178,8 @@ builder.Services.AddScoped<IPredictionService, PredictionService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<IExportService, ExportService>();
+builder.Services.AddScoped<IStudentExportService, StudentExportService>();
+builder.Services.AddScoped<IFacultyExportService, FacultyExportService>();
 
 
 
@@ -266,7 +271,8 @@ builder.Services.AddCors(options =>
     {
         policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .WithExposedHeaders("Content-Disposition");
     });
 
     // Production CORS policy (more restrictive)
@@ -279,7 +285,8 @@ builder.Services.AddCors(options =>
             )
             .AllowAnyMethod()
             .AllowAnyHeader()
-            .AllowCredentials();
+            .AllowCredentials()
+            .WithExposedHeaders("Content-Disposition");
     });
 });
 

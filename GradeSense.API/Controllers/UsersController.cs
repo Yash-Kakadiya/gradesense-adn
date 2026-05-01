@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize]
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
@@ -29,6 +29,7 @@ public class UsersController : ControllerBase
     /// <param name="filter">Filter parameters</param>
     /// <returns>Paginated list of users</returns>
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<PagedResponse<DTOs.User.Response.UserListResponse>>), StatusCodes.Status200OK)]
     public async Task<ActionResult<ApiResponse<PagedResponse<DTOs.User.Response.UserListResponse>>>> GetAll([FromQuery] UserFilterRequest filter)
     {
@@ -55,12 +56,23 @@ public class UsersController : ControllerBase
     /// <param name="id">User ID</param>
     /// <returns>User details</returns>
     [HttpGet("{id}")]
+    [Authorize(Roles = "Admin,Faculty,Student")]
     [ProducesResponseType(typeof(ApiResponse<DTOs.User.Response.UserDetailResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<DTOs.User.Response.UserDetailResponse>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<DTOs.User.Response.UserDetailResponse>>> GetById(int id)
     {
         try
         {
+            // Non-admin users can only access their own user record
+            if (!User.IsInRole("Admin"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || userId != id)
+                {
+                    return Forbid();
+                }
+            }
+
             var user = await _userService.GetByIdAsync(id);
             if (user == null)
             {
@@ -89,6 +101,7 @@ public class UsersController : ControllerBase
     /// <param name="request">User creation data</param>
     /// <returns>Created user</returns>
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<DTOs.User.Response.UserResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<DTOs.User.Response.UserResponse>), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<ApiResponse<DTOs.User.Response.UserResponse>>> Create([FromBody] CreateUserRequest request)
@@ -130,6 +143,7 @@ public class UsersController : ControllerBase
     /// <param name="request">User update data</param>
     /// <returns>Updated user</returns>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status400BadRequest)]
@@ -178,6 +192,7 @@ public class UsersController : ControllerBase
     /// <param name="request">Password change data</param>
     /// <returns>Success status</returns>
     [HttpPut("{id}/change-password")]
+    [Authorize(Roles = "Admin,Faculty,Student")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status401Unauthorized)]
@@ -185,6 +200,15 @@ public class UsersController : ControllerBase
     {
         try
         {
+            // Users can only change their own password (unless Admin)
+            if (!User.IsInRole("Admin"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || userId != id)
+                {
+                    return Forbid();
+                }
+            }
 
             var result = await _userService.ChangePasswordAsync(id, request);
 
@@ -199,7 +223,9 @@ public class UsersController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return Unauthorized(ApiResponse<bool>.ErrorResponse(ex.Message));
+            // Return 400 Bad Request instead of 401 for wrong current password
+            // to prevent automatic logout by the frontend interceptor
+            return BadRequest(ApiResponse<bool>.ErrorResponse(ex.Message));
         }
         catch (Exception ex)
         {
@@ -211,11 +237,55 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Admin reset user password (without requiring current password)
+    /// </summary>
+    /// <param name="id">User ID</param>
+    /// <param name="request">New password data</param>
+    /// <returns>Success status</returns>
+    [HttpPut("{id}/admin-reset-password")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<bool>>> AdminResetPassword(int id, [FromBody] AdminResetPasswordRequest request)
+    {
+        try
+        {
+            if (request.NewPassword != request.ConfirmPassword)
+            {
+                return BadRequest(ApiResponse<bool>.ErrorResponse("Passwords do not match"));
+            }
+
+            var result = await _userService.AdminResetPasswordAsync(id, request);
+
+            // Create audit log
+            await _auditLogger.LogAsync("AdminResetPassword", "User", id.ToString(), "Admin reset user password");
+
+            return Ok(ApiResponse<bool>.SuccessResponse(
+                result,
+                "Password reset successfully"
+            ));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<bool>.ErrorResponse(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error resetting password for user {UserId}", id);
+            return StatusCode(500, ApiResponse<bool>.ErrorResponse(
+                "An error occurred while resetting the password"
+            ));
+        }
+    }
+
+    /// <summary>
     /// Delete a user (soft delete)
     /// </summary>
     /// <param name="id">User ID</param>
     /// <returns>Success status</returns>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
@@ -388,4 +458,107 @@ public class UsersController : ControllerBase
             ));
         }
     }
+
+    #region Bulk Import
+
+    /// <summary>
+    /// Download user import template
+    /// </summary>
+    /// <returns>Excel template file</returns>
+    [HttpGet("import/template")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetImportTemplate()
+    {
+        try
+        {
+            var templateBytes = await _userService.GetUserImportTemplateAsync();
+            return File(templateBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "user_import_template.xlsx");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating user import template");
+            return StatusCode(500, ApiResponse<string>.ErrorResponse("Failed to generate template"));
+        }
+    }
+
+    /// <summary>
+    /// Validate user import file
+    /// </summary>
+    /// <param name="file">Excel or CSV file</param>
+    /// <returns>Validation results with preview</returns>
+    [HttpPost("import/validate")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<DTOs.User.Request.BulkUserValidationResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<DTOs.User.Request.BulkUserValidationResponse>>> ValidateImport(IFormFile file)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(ApiResponse<DTOs.User.Request.BulkUserValidationResponse>.ErrorResponse("No file uploaded"));
+            }
+
+            var extension = Path.GetExtension(file.FileName).ToLower();
+            if (extension != ".xlsx" && extension != ".xls" && extension != ".csv")
+            {
+                return BadRequest(ApiResponse<DTOs.User.Request.BulkUserValidationResponse>.ErrorResponse("Invalid file type. Only Excel (.xlsx, .xls) and CSV (.csv) files are supported"));
+            }
+
+            using var stream = file.OpenReadStream();
+            var result = await _userService.ValidateUserImportAsync(stream, extension);
+
+            return Ok(ApiResponse<DTOs.User.Request.BulkUserValidationResponse>.SuccessResponse(
+                result,
+                "File validated successfully"
+            ));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating user import file");
+            return StatusCode(500, ApiResponse<DTOs.User.Request.BulkUserValidationResponse>.ErrorResponse(
+                "An error occurred while validating the file"
+            ));
+        }
+    }
+
+    /// <summary>
+    /// Execute user import
+    /// </summary>
+    /// <param name="request">Import request with validated rows</param>
+    /// <returns>Import results</returns>
+    [HttpPost("import/execute")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<DTOs.Common.BulkOperationResponse<DTOs.User.Response.UserResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<DTOs.Common.BulkOperationResponse<DTOs.User.Response.UserResponse>>>> ExecuteImport([FromBody] DTOs.User.Request.BulkUserImportRequest request)
+    {
+        try
+        {
+            if (request.Rows == null || !request.Rows.Any())
+            {
+                return BadRequest(ApiResponse<DTOs.Common.BulkOperationResponse<DTOs.User.Response.UserResponse>>.ErrorResponse("No rows to import"));
+            }
+
+            var result = await _userService.ImportUsersWithValidationAsync(request);
+
+            // Create audit log
+            await _auditLogger.LogAsync("BulkImport", "User", null, $"Bulk imported {result.SuccessCount} users, {result.ErrorCount} errors");
+
+            return Ok(ApiResponse<DTOs.Common.BulkOperationResponse<DTOs.User.Response.UserResponse>>.SuccessResponse(
+                result,
+                $"Import completed: {result.SuccessCount} successful, {result.ErrorCount} errors"
+            ));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing user import");
+            return StatusCode(500, ApiResponse<DTOs.Common.BulkOperationResponse<DTOs.User.Response.UserResponse>>.ErrorResponse(
+                "An error occurred while importing users"
+            ));
+        }
+    }
+
+    #endregion
 }

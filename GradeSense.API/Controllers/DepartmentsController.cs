@@ -10,7 +10,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     public class DepartmentsController : ControllerBase
     {
         private readonly IDepartmentService _departmentService;
@@ -90,6 +90,7 @@ namespace GradeSense.API.Controllers
         /// Create a new department
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<DepartmentResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<DepartmentResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<DepartmentResponse>>> Create(
@@ -128,6 +129,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing department
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<DepartmentResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<DepartmentResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<DepartmentResponse>), StatusCodes.Status400BadRequest)]
@@ -175,6 +177,7 @@ namespace GradeSense.API.Controllers
         /// Delete a department (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)

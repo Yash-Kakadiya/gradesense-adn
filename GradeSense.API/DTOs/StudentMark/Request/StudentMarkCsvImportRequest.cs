@@ -29,16 +29,6 @@ public class StudentMarkCsvImportRequest
 }
 
 /// <summary>
-/// Request for bulk grade import with assessment context
-/// </summary>
-public class BulkGradeImportRequest
-{
-    public int AssessmentItemId { get; set; }
-    public int GraderId { get; set; }
-    public IFormFile File { get; set; } = null!;
-}
-
-/// <summary>
 /// Export filter for grades CSV
 /// </summary>
 public class StudentMarkExportFilterRequest
@@ -47,3 +37,4 @@ public class StudentMarkExportFilterRequest
     public int? AssessmentItemId { get; set; }
     public int? StudentId { get; set; }
 }
+

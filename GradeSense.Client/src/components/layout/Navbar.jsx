@@ -101,7 +101,19 @@ const Navbar = ({ onMenuClick }) => {
 
         const breadcrumb = []
 
-        // Add role-based home
+        // Get role dashboard path
+        let dashboardPath = '/'
+        if (segments[0] === 'admin') {
+            dashboardPath = ROUTES.ADMIN_DASHBOARD
+        } else if (segments[0] === 'faculty') {
+            dashboardPath = ROUTES.FACULTY_DASHBOARD
+        } else if (segments[0] === 'student') {
+            dashboardPath = ROUTES.STUDENT_DASHBOARD
+        }
+
+        // Only add dashboard breadcrumb if we're not already on dashboard
+        const isOnDashboard = path === dashboardPath || segments[1] === 'dashboard'
+
         if (segments[0] === 'admin') {
             breadcrumb.push({ label: 'Admin', path: ROUTES.ADMIN_DASHBOARD })
         } else if (segments[0] === 'faculty') {
@@ -110,8 +122,8 @@ const Navbar = ({ onMenuClick }) => {
             breadcrumb.push({ label: 'Student', path: ROUTES.STUDENT_DASHBOARD })
         }
 
-        // Add current page
-        if (segments.length > 1) {
+        // Add current page only if not on dashboard
+        if (segments.length > 1 && segments[1] !== 'dashboard') {
             const pageName = segments[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
             breadcrumb.push({ label: pageName, path: path })
         }

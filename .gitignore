@@ -1,25 +1,83 @@
-# Visual Studio / .NET
+# Visual Studio
 .vs/
-bin/
-obj/
 *.user
 *.suo
-*.pdb
-*.cache
-*.dll
-*.exe
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.cachefile
+*.VisualState.xml
 
-# Node / React
-node_modules/
+# Build Results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
 build/
 dist/
-.env
-.env.local
+*.dll
+*.exe
+*.pdb
+*.cache
+*.ncb
+*.opendb
+*.opensdf
+[Bb]uild[Ll]og.*
+*.tmp
+*.bak
+*~
+
+# .NET / ASP.NET Specific
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.dbmdl
+*.jfm
+*.pfx
+*.publishsettings
+*.nupkg
+**/packages/*
+TestResult.xml
+[Tt]est[Rr]esult*/
+
+# Logs
+*.log
+nlog-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# General
-.DS_Store
+# Node / React (if frontend exists)
+node_modules/
+.env
+.env.*
+!.env.example
+
+# IDEs
 .vscode/
+.idea/
+*.sln.iml
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# GitHub / Copilot
+.github/copilot/
+**/.copilot/
+.copilot-*
+copilot-*.md
+
+# OS Files
+.DS_Store
+._*
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor Swap Files
+*.swp
+*.swo

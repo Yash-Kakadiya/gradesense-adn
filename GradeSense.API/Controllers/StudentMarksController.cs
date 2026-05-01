@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Faculty")]
+    [Authorize]
     public class StudentMarksController : ControllerBase
     {
         private readonly IStudentMarkService _studentMarkService;
@@ -40,7 +40,7 @@ namespace GradeSense.API.Controllers
                 // Students can only see their own marks
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId))
                     {
                         return Forbid();
@@ -85,7 +85,7 @@ namespace GradeSense.API.Controllers
                 // Students can only view their own marks
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId) || studentMark.StudentId != studentId)
                     {
                         return Forbid();
@@ -110,6 +110,7 @@ namespace GradeSense.API.Controllers
         /// Create a new student mark
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<StudentMarkResponse>>> Create(
@@ -152,6 +153,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing student mark
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<StudentMarkResponse>), StatusCodes.Status400BadRequest)]
@@ -199,6 +201,7 @@ namespace GradeSense.API.Controllers
         /// Delete a student mark (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
@@ -240,6 +243,7 @@ namespace GradeSense.API.Controllers
         /// Submit marks for multiple students for a specific assessment
         /// </remarks>
         [HttpPost("bulk")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<BulkStudentMarkResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<BulkStudentMarkResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<BulkStudentMarkResponse>>> BulkEntry(
@@ -286,6 +290,7 @@ namespace GradeSense.API.Controllers
         /// CSV Format: EnrollmentNumber, ObtainedMarks, IsAbsent, Remarks
         /// </remarks>
         [HttpPost("import/csv")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentMarkResponse>>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentMarkResponse>>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<BulkOperationResponse<StudentMarkResponse>>>> ImportGradesFromCsv(
@@ -342,6 +347,7 @@ namespace GradeSense.API.Controllers
         /// Export grades to CSV file
         /// </summary>
         [HttpGet("export/csv")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         public async Task<IActionResult> ExportGradesToCsv([FromQuery] StudentMarkExportFilterRequest filter)
         {
@@ -368,6 +374,7 @@ namespace GradeSense.API.Controllers
         /// Returns a CSV template pre-filled with enrolled students for the assessment
         /// </remarks>
         [HttpGet("import/template/{assessmentItemId}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetGradeTemplate(int assessmentItemId)
@@ -386,6 +393,132 @@ namespace GradeSense.API.Controllers
                 _logger.LogError(ex, "Error generating grade template for assessment {AssessmentItemId}", assessmentItemId);
                 return StatusCode(500, ApiResponse<object>.ErrorResponse(
                     "An error occurred while generating template"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Download Excel template for grade entry
+        /// </summary>
+        [HttpGet("import/template/excel/{assessmentItemId}")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetGradeTemplateExcel(int assessmentItemId)
+        {
+            try
+            {
+                var excelBytes = await _studentMarkService.GetGradeTemplateExcelAsync(assessmentItemId);
+                return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    $"grade_template_assessment_{assessmentItemId}.xlsx");
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating Excel grade template for assessment {AssessmentItemId}", assessmentItemId);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse(
+                    "An error occurred while generating template"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Validate grade import file and return preview with conflicts
+        /// </summary>
+        /// <remarks>
+        /// Accepts Excel (.xlsx) or CSV (.csv) files.
+        /// Returns validation results with conflict detection for existing marks.
+        /// </remarks>
+        [HttpPost("import/validate")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(ApiResponse<BulkGradeValidationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkGradeValidationResponse>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkGradeValidationResponse>>> ValidateGradeImport(
+            [FromQuery] int assessmentItemId,
+            IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(ApiResponse<BulkGradeValidationResponse>.ErrorResponse("No file uploaded"));
+                }
+
+                var extension = Path.GetExtension(file.FileName).ToLower();
+                if (extension != ".csv" && extension != ".xlsx" && extension != ".xls")
+                {
+                    return BadRequest(ApiResponse<BulkGradeValidationResponse>.ErrorResponse(
+                        "Only CSV and Excel files are supported"
+                    ));
+                }
+
+                using var stream = file.OpenReadStream();
+                var result = await _studentMarkService.ValidateGradeImportAsync(assessmentItemId, stream, extension);
+
+                return Ok(ApiResponse<BulkGradeValidationResponse>.SuccessResponse(
+                    result,
+                    $"Validation complete: {result.ValidRows} valid, {result.InvalidRows} invalid, {result.ConflictRows} conflicts"
+                ));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkGradeValidationResponse>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating grade import");
+                return StatusCode(500, ApiResponse<BulkGradeValidationResponse>.ErrorResponse(
+                    "An error occurred while validating import file"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Import grades with validation and conflict resolution
+        /// </summary>
+        /// <remarks>
+        /// Import grades with specified conflict resolution strategy: Skip, Update, or Error
+        /// </remarks>
+        [HttpPost("import/execute")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentMarkResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentMarkResponse>>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkOperationResponse<StudentMarkResponse>>>> ExecuteGradeImport(
+            [FromBody] BulkGradeImportRequest request)
+        {
+            try
+            {
+                if (request.Rows == null || request.Rows.Count == 0)
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(
+                        "No grade data provided"
+                    ));
+                }
+
+                var result = await _studentMarkService.ImportGradesWithValidationAsync(request);
+
+                var message = result.IsSuccess
+                    ? $"Import completed successfully. {result.SuccessCount} grades recorded."
+                    : $"Import completed with errors. {result.SuccessCount} succeeded, {result.ErrorCount} failed.";
+
+                return Ok(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.SuccessResponse(result, message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing grade import");
+                return StatusCode(500, ApiResponse<BulkOperationResponse<StudentMarkResponse>>.ErrorResponse(
+                    "An error occurred while importing grades"
                 ));
             }
         }

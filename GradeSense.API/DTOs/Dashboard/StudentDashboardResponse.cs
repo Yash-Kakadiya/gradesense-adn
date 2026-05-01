@@ -43,10 +43,57 @@ public class StudentDashboardResponse
     // Performance Trend
     public List<SemesterPerformance> PerformanceTrend { get; set; } = new();
 
+    // Grade Trend (marks over time for charts)
+    public List<GradeTrendItem> GradeTrend { get; set; } = new();
+
+    // Subject-wise Performance
+    public List<SubjectPerformance> SubjectPerformances { get; set; } = new();
+
+    // Attendance by Course
+    public List<CourseAttendance> CourseAttendances { get; set; } = new();
+
     // Predictions/Alerts
     public string? RiskStatus { get; set; }
     public decimal? RiskScore { get; set; }
     public List<string> Recommendations { get; set; } = new();
+}
+
+/// <summary>
+/// Grade trend item for line chart
+/// </summary>
+public class GradeTrendItem
+{
+    public string Date { get; set; } = string.Empty;
+    public string AssessmentName { get; set; } = string.Empty;
+    public string SubjectCode { get; set; } = string.Empty;
+    public decimal Percentage { get; set; }
+}
+
+/// <summary>
+/// Subject-wise performance for radar/bar chart
+/// </summary>
+public class SubjectPerformance
+{
+    public string SubjectCode { get; set; } = string.Empty;
+    public string SubjectName { get; set; } = string.Empty;
+    public decimal Score { get; set; }
+    public decimal MaxScore { get; set; }
+    public decimal Percentage { get; set; }
+    public int AssessmentCount { get; set; }
+}
+
+/// <summary>
+/// Course attendance breakdown
+/// </summary>
+public class CourseAttendance
+{
+    public string SubjectCode { get; set; } = string.Empty;
+    public string SubjectName { get; set; } = string.Empty;
+    public int TotalClasses { get; set; }
+    public int Present { get; set; }
+    public int Absent { get; set; }
+    public int Late { get; set; }
+    public decimal Percentage { get; set; }
 }
 
 /// <summary>

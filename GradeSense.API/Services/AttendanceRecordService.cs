@@ -1,9 +1,11 @@
 ﻿using GradeSense.API.DTOs.AttendanceRecord.Request;
 using GradeSense.API.DTOs.AttendanceRecord.Response;
 using GradeSense.API.DTOs.Common;
+using GradeSense.API.Helpers;
 using GradeSense.API.Interfaces.Repositories;
 using GradeSense.API.Interfaces.Services;
 using GradeSense.API.Models;
+using static GradeSense.API.Helpers.ExcelHelperService;
 
 namespace GradeSense.API.Services
 {
@@ -146,6 +148,7 @@ namespace GradeSense.API.Services
             {
                 Id = attendanceRecord!.Id,
                 EnrollmentId = attendanceRecord.EnrollmentId,
+                StudentId = attendanceRecord.Enrollment.StudentId,
                 StudentName = attendanceRecord.Enrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = attendanceRecord.Enrollment.Student.EnrollmentNumber,
                 SubjectCode = attendanceRecord.Enrollment.CourseOffering.Subject.Code,
@@ -204,6 +207,7 @@ namespace GradeSense.API.Services
             {
                 Id = attendanceRecord!.Id,
                 EnrollmentId = attendanceRecord.EnrollmentId,
+                StudentId = attendanceRecord.Enrollment.StudentId,
                 StudentName = attendanceRecord.Enrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = attendanceRecord.Enrollment.Student.EnrollmentNumber,
                 SubjectCode = attendanceRecord.Enrollment.CourseOffering.Subject.Code,
@@ -322,5 +326,308 @@ namespace GradeSense.API.Services
 
             return response;
         }
+
+        #region Excel Import Operations
+
+        /// <summary>
+        /// Validate attendance import file and return preview with conflicts
+        /// </summary>
+        public async Task<BulkAttendanceValidationResponse> ValidateAttendanceImportAsync(
+            int courseOfferingId, DateOnly date, Stream fileStream, string fileType)
+        {
+            var response = new BulkAttendanceValidationResponse();
+
+            // Get all enrollments for this course
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(courseOfferingId);
+            if (enrollments == null || enrollments.Count == 0)
+                throw new KeyNotFoundException("Course offering not found or has no enrollments");
+
+            // Parse file based on type
+            List<AttendanceImportRowData> records;
+            List<ExcelParseError> parseErrors;
+
+            if (fileType.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                fileType.Equals(".xls", StringComparison.OrdinalIgnoreCase))
+            {
+                (records, parseErrors) = ExcelHelperService.ParseAttendanceImportExcel(fileStream);
+            }
+            else
+            {
+                // CSV parsing
+                var csvResult = await CsvHelperService.ParseCsvWithErrorsAsync<AttendanceCsvImportRequest>(fileStream);
+                records = csvResult.Records.Select((r, i) => new AttendanceImportRowData
+                {
+                    RowNumber = i + 2,
+                    RollNumber = r.EnrollmentNumber,
+                    Status = r.Status,
+                    Remarks = r.Remarks
+                }).ToList();
+                parseErrors = csvResult.Errors.Select(e => new ExcelParseError
+                {
+                    RowNumber = e.RowNumber,
+                    RawData = e.RawData,
+                    ErrorMessage = e.ErrorMessage
+                }).ToList();
+            }
+
+            response.TotalRows = records.Count + parseErrors.Count;
+
+            // Add parse errors
+            foreach (var error in parseErrors)
+            {
+                response.Rows.Add(new AttendanceValidationRow
+                {
+                    RowNumber = error.RowNumber,
+                    RollNumber = error.RawData ?? "",
+                    IsValid = false,
+                    Errors = new List<string> { error.ErrorMessage }
+                });
+                response.InvalidRows++;
+            }
+
+            var validStatuses = new[] { "present", "absent", "late", "excused" };
+
+            // Validate each record
+            foreach (var record in records)
+            {
+                var validationRow = new AttendanceValidationRow
+                {
+                    RowNumber = record.RowNumber,
+                    RollNumber = record.RollNumber,
+                    Status = record.Status,
+                    Remarks = record.Remarks,
+                    IsValid = true
+                };
+
+                // Validate roll number
+                if (string.IsNullOrWhiteSpace(record.RollNumber))
+                {
+                    validationRow.Errors.Add("Roll number is required");
+                    validationRow.IsValid = false;
+                }
+                else
+                {
+                    // Find enrollment
+                    var enrollment = enrollments.FirstOrDefault(e =>
+                        e.Student.EnrollmentNumber.Equals(record.RollNumber, StringComparison.OrdinalIgnoreCase));
+
+                    if (enrollment == null)
+                    {
+                        validationRow.Errors.Add($"Student '{record.RollNumber}' not enrolled in this course");
+                        validationRow.IsValid = false;
+                    }
+                    else
+                    {
+                        validationRow.StudentId = enrollment.StudentId;
+                        validationRow.EnrollmentId = enrollment.Id;
+                        validationRow.StudentName = enrollment.Student.IdNavigation.FullName;
+
+                        // Check for existing attendance
+                        var existingRecord = await _attendanceRecordRepository.FindByEnrollmentAndDateAsync(
+                            enrollment.Id, date);
+                        if (existingRecord != null)
+                        {
+                            validationRow.HasConflict = true;
+                            validationRow.ExistingStatus = existingRecord.Status;
+                        }
+                    }
+                }
+
+                // Validate status
+                if (string.IsNullOrWhiteSpace(record.Status))
+                {
+                    validationRow.Errors.Add("Status is required");
+                    validationRow.IsValid = false;
+                }
+                else if (!validStatuses.Contains(record.Status.ToLower()))
+                {
+                    validationRow.Errors.Add($"Invalid status '{record.Status}'. Valid: Present, Absent, Late, Excused");
+                    validationRow.IsValid = false;
+                }
+
+                if (validationRow.IsValid)
+                {
+                    if (validationRow.HasConflict)
+                        response.ConflictRows++;
+                    else
+                        response.ValidRows++;
+                }
+                else
+                {
+                    response.InvalidRows++;
+                }
+
+                response.Rows.Add(validationRow);
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// Import attendance with conflict resolution
+        /// </summary>
+        public async Task<BulkOperationResponse<AttendanceRecordResponse>> ImportAttendanceWithValidationAsync(
+            BulkAttendanceImportRequest request)
+        {
+            var response = new BulkOperationResponse<AttendanceRecordResponse>();
+
+            // Validate course offering
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(request.CourseOfferingId);
+            if (enrollments == null || enrollments.Count == 0)
+                throw new KeyNotFoundException("Course offering not found or has no enrollments");
+
+            // Validate faculty
+            if (!await _facultyRepository.ExistsAsync(request.MarkedById))
+                throw new KeyNotFoundException("Faculty not found");
+
+            response.TotalRecords = request.Rows.Count;
+
+            foreach (var row in request.Rows)
+            {
+                try
+                {
+                    // Find enrollment
+                    var enrollment = enrollments.FirstOrDefault(e =>
+                        e.Student.EnrollmentNumber.Equals(row.RollNumber, StringComparison.OrdinalIgnoreCase));
+
+                    if (enrollment == null)
+                    {
+                        response.Errors.Add(new BulkOperationError
+                        {
+                            RowNumber = row.RowNumber,
+                            Identifier = row.RollNumber,
+                            ErrorMessage = "Student not found in this course"
+                        });
+                        continue;
+                    }
+
+                    // Check for existing attendance
+                    var existingRecord = await _attendanceRecordRepository.FindByEnrollmentAndDateAsync(
+                        enrollment.Id, request.AttendanceDate);
+
+                    AttendanceRecord? finalRecord = null;
+
+                    if (existingRecord != null)
+                    {
+                        // Handle conflict
+                        switch (request.ConflictResolution.ToLower())
+                        {
+                            case "skip":
+                                response.Errors.Add(new BulkOperationError
+                                {
+                                    RowNumber = row.RowNumber,
+                                    Identifier = row.RollNumber,
+                                    ErrorMessage = "Skipped - attendance already exists"
+                                });
+                                continue;
+
+                            case "error":
+                                response.Errors.Add(new BulkOperationError
+                                {
+                                    RowNumber = row.RowNumber,
+                                    Identifier = row.RollNumber,
+                                    ErrorMessage = "Conflict - attendance already exists"
+                                });
+                                continue;
+
+                            case "update":
+                                existingRecord.Status = NormalizeStatus(row.Status);
+                                existingRecord.Remarks = row.Remarks;
+                                existingRecord.RecordedBy = request.MarkedById;
+                                existingRecord.UpdatedAt = DateTime.UtcNow;
+                                await _attendanceRecordRepository.UpdateAsync(existingRecord);
+                                finalRecord = await _attendanceRecordRepository.GetByIdAsync(existingRecord.Id);
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        // Create new record
+                        var newRecord = new AttendanceRecord
+                        {
+                            EnrollmentId = enrollment.Id,
+                            AttendanceDate = request.AttendanceDate,
+                            Status = NormalizeStatus(row.Status),
+                            Remarks = row.Remarks,
+                            RecordedBy = request.MarkedById,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await _attendanceRecordRepository.CreateAsync(newRecord);
+                        finalRecord = await _attendanceRecordRepository.GetByIdAsync(newRecord.Id);
+                    }
+
+                    if (finalRecord != null)
+                    {
+                        response.SuccessfulRecords.Add(new AttendanceRecordResponse
+                        {
+                            Id = finalRecord.Id,
+                            EnrollmentId = finalRecord.EnrollmentId,
+                            StudentId = finalRecord.Enrollment.StudentId,
+                            StudentName = finalRecord.Enrollment.Student.IdNavigation.FullName,
+                            EnrollmentNumber = finalRecord.Enrollment.Student.EnrollmentNumber,
+                            SubjectCode = finalRecord.Enrollment.CourseOffering.Subject.Code,
+                            SubjectName = finalRecord.Enrollment.CourseOffering.Subject.Name,
+                            AttendanceDate = finalRecord.AttendanceDate,
+                            Status = finalRecord.Status,
+                            RecordedBy = finalRecord.RecordedBy,
+                            RecordedByName = finalRecord.RecordedByNavigation?.IdNavigation.FullName,
+                            Remarks = finalRecord.Remarks,
+                            CreatedAt = finalRecord.CreatedAt,
+                            UpdatedAt = finalRecord.UpdatedAt
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Errors.Add(new BulkOperationError
+                    {
+                        RowNumber = row.RowNumber,
+                        Identifier = row.RollNumber,
+                        ErrorMessage = ex.Message
+                    });
+                }
+            }
+
+            response.SuccessCount = response.SuccessfulRecords.Count;
+            response.ErrorCount = response.Errors.Count;
+
+            return response;
+        }
+
+        /// <summary>
+        /// Generate Excel template for attendance import
+        /// </summary>
+        public async Task<byte[]> GetAttendanceTemplateExcelAsync(int courseOfferingId)
+        {
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(courseOfferingId);
+            if (enrollments == null || enrollments.Count == 0)
+                throw new KeyNotFoundException("Course offering not found or has no enrollments");
+
+            var courseOffering = enrollments.First().CourseOffering;
+
+            var templateData = enrollments.Select(e => new
+            {
+                RollNumber = e.Student.EnrollmentNumber,
+                StudentName = e.Student.IdNavigation.FullName,
+                Status = "",
+                Remarks = ""
+            }).ToList();
+
+            return ExcelHelperService.GenerateExcel(templateData, $"Attendance - {courseOffering.Subject.Code}");
+        }
+
+        private static string NormalizeStatus(string status)
+        {
+            return status.ToLower() switch
+            {
+                "p" or "present" or "1" or "yes" => "Present",
+                "a" or "absent" or "0" or "no" => "Absent",
+                "l" or "late" => "Late",
+                "e" or "excused" => "Excused",
+                _ => status
+            };
+        }
+
+        #endregion
     }
 }

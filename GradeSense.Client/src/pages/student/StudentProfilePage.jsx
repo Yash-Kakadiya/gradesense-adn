@@ -1,11 +1,11 @@
-import { useState, useEffect, Fragment } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, Fragment } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { Dialog, Transition } from '@headlessui/react'
 import { Card, Badge, Button } from '@/components/common'
 import { studentService } from '@/services/studentService'
 import { userService } from '@/services/userService'
 import { useAuth } from '@/context/AuthContext'
-import { formatDate, cn } from '@/utils/helpers'
+import { cn } from '@/utils/helpers'
 import { getErrorMessage } from '@/utils/errorHandler'
 import toast from 'react-hot-toast'
 import {
@@ -13,10 +13,7 @@ import {
     Mail,
     Phone,
     Shield,
-    Calendar,
-    Clock,
     Key,
-    Save,
     X,
     Eye,
     EyeOff,
@@ -25,9 +22,9 @@ import {
     Building2,
     Hash,
     GraduationCap,
-    Edit2,
     Award,
     BookOpen,
+    Calendar,
 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
@@ -206,12 +203,10 @@ const InfoRow = ({ icon: Icon, label, value, className }) => (
 
 const StudentProfilePage = () => {
     const { user: authUser } = useAuth()
-    const queryClient = useQueryClient()
-    const [isEditing, setIsEditing] = useState(false)
     const [showPasswordModal, setShowPasswordModal] = useState(false)
 
     // Fetch user profile data
-    const { data: userData, isLoading: loadingUser, refetch: refetchUser } = useQuery({
+    const { data: userData, isLoading: loadingUser } = useQuery({
         queryKey: ['user-profile', authUser?.id],
         queryFn: () => userService.getById(authUser?.id),
         enabled: !!authUser?.id,
@@ -226,52 +221,6 @@ const StudentProfilePage = () => {
 
     const user = userData?.Data
     const student = studentData?.Data
-
-    // Form data
-    const [formData, setFormData] = useState({
-        fullName: '',
-        email: '',
-        phoneNumber: '',
-    })
-
-    useEffect(() => {
-        if (user) {
-            setFormData({
-                fullName: user.FullName || '',
-                email: user.Email || '',
-                phoneNumber: user.PhoneNumber || '',
-            })
-        }
-    }, [user])
-
-    // Update profile mutation
-    const updateProfileMutation = useMutation({
-        mutationFn: (data) => userService.update(authUser?.id, data),
-        onSuccess: () => {
-            toast.success('Profile updated successfully')
-            setIsEditing(false)
-            queryClient.invalidateQueries(['user-profile'])
-            refetchUser()
-        },
-        onError: (error) => {
-            toast.error(getErrorMessage(error))
-        },
-    })
-
-    const handleSave = () => {
-        updateProfileMutation.mutate(formData)
-    }
-
-    const handleCancel = () => {
-        if (user) {
-            setFormData({
-                fullName: user.FullName || '',
-                email: user.Email || '',
-                phoneNumber: user.PhoneNumber || '',
-            })
-        }
-        setIsEditing(false)
-    }
 
     const isLoading = loadingUser || loadingStudent
 
@@ -378,77 +327,17 @@ const StudentProfilePage = () => {
                                 <UserCheck className="w-5 h-5 text-emerald-600" />
                                 <h3 className="font-semibold text-gray-900">Personal Information</h3>
                             </div>
-                            {!isEditing ? (
-                                <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
-                                    <Edit2 className="w-4 h-4 mr-2" />
-                                    Edit
-                                </Button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <Button variant="ghost" size="sm" onClick={handleCancel}>
-                                        <X className="w-4 h-4 mr-2" />
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        variant="primary"
-                                        size="sm"
-                                        onClick={handleSave}
-                                        disabled={updateProfileMutation.isPending}
-                                    >
-                                        {updateProfileMutation.isPending ? (
-                                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                                        ) : (
-                                            <Save className="w-4 h-4 mr-2" />
-                                        )}
-                                        Save
-                                    </Button>
-                                </div>
-                            )}
                         </div>
                     </Card.Header>
                     <Card.Body className="p-0">
-                        {isEditing ? (
-                            <div className="p-6 space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
-                                    <input
-                                        type="text"
-                                        value={formData.fullName}
-                                        onChange={(e) => setFormData(p => ({ ...p, fullName: e.target.value }))}
-                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                                    <input
-                                        type="email"
-                                        value={formData.email}
-                                        onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))}
-                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone Number</label>
-                                    <input
-                                        type="tel"
-                                        value={formData.phoneNumber}
-                                        onChange={(e) => setFormData(p => ({ ...p, phoneNumber: e.target.value }))}
-                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                    />
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="px-6">
-                                <InfoRow icon={User} label="Full Name" value={student?.FullName || user?.FullName} />
-                                <InfoRow icon={Mail} label="Email Address" value={student?.PersonalEmail || user?.Email} />
-                                <InfoRow icon={Phone} label="Phone Number" value={student?.PhoneNumber || user?.PhoneNumber} />
-                                <InfoRow icon={Hash} label="Enrollment Number" value={student?.EnrollmentNumber} />
-                                <InfoRow icon={Building2} label="Department" value={student?.DepartmentName} />
-                                <InfoRow icon={GraduationCap} label="Batch" value={student?.BatchName} />
-                                <InfoRow icon={Calendar} label="Date of Birth" value={formatDate(student?.DateOfBirth)} />
-                                <InfoRow icon={Clock} label="Admission Date" value={formatDate(student?.AdmissionDate)} />
-                            </div>
-                        )}
+                        <div className="px-6">
+                            <InfoRow icon={User} label="Full Name" value={student?.FullName || user?.FullName} />
+                            <InfoRow icon={Mail} label="Email Address" value={student?.PersonalEmail || user?.Email} />
+                            <InfoRow icon={Phone} label="Phone Number" value={student?.PhoneNumber || user?.PhoneNumber} />
+                            <InfoRow icon={Hash} label="Enrollment Number" value={student?.EnrollmentNumber} />
+                            <InfoRow icon={Building2} label="Department" value={student?.DepartmentName} />
+                            <InfoRow icon={GraduationCap} label="Batch" value={student?.BatchName} />
+                        </div>
                     </Card.Body>
                 </Card>
 
@@ -461,7 +350,7 @@ const StudentProfilePage = () => {
                         </div>
                     </Card.Header>
                     <Card.Body className="p-4">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="text-center p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl">
                                 <div className="p-2 bg-emerald-100 rounded-lg w-fit mx-auto mb-2">
                                     <Award className="w-5 h-5 text-emerald-600" />
@@ -475,13 +364,6 @@ const StudentProfilePage = () => {
                                 </div>
                                 <p className="text-2xl font-bold text-gray-900">{student?.CurrentSemester || '-'}</p>
                                 <p className="text-xs text-gray-500">Current Semester</p>
-                            </div>
-                            <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl">
-                                <div className="p-2 bg-purple-100 rounded-lg w-fit mx-auto mb-2">
-                                    <GraduationCap className="w-5 h-5 text-purple-600" />
-                                </div>
-                                <p className="text-2xl font-bold text-gray-900">{student?.TotalCreditsEarned || '-'}</p>
-                                <p className="text-xs text-gray-500">Credits Earned</p>
                             </div>
                             <div className="text-center p-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl">
                                 <div className="p-2 bg-amber-100 rounded-lg w-fit mx-auto mb-2">

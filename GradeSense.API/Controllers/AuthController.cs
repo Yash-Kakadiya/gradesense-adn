@@ -139,7 +139,7 @@ namespace GradeSense.API.Controllers
                 // Revoke token
                 await _authService.LogoutAsync(token);
 
-                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var userId = User.FindFirst("sub")?.Value;
                 _logger.LogInformation("User {UserId} logged out successfully", userId);
 
                 // Create audit log for logout
@@ -172,11 +172,11 @@ namespace GradeSense.API.Controllers
         {
             try
             {
-                // Extract claims from token
-                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                var email = User.FindFirst(ClaimTypes.Email)?.Value;
-                var name = User.FindFirst(ClaimTypes.Name)?.Value;
-                var role = User.FindFirst(ClaimTypes.Role)?.Value;
+                // Extract claims from token (using lowercase claim names since MapInboundClaims = false)
+                var userId = User.FindFirst("sub")?.Value;
+                var email = User.FindFirst("email")?.Value;
+                var name = User.FindFirst("name")?.Value;
+                var role = User.FindFirst("role")?.Value;
 
                 // Build response
                 var userInfo = new

@@ -304,6 +304,99 @@ public class DashboardService : IDashboardService
             })
             .ToListAsync();
 
+        // Grade Trend for line chart (last 20 graded assessments)
+        response.GradeTrend = await _context.StudentMarks
+            .Include(sm => sm.AssessmentItem)
+            .Include(sm => sm.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                    .ThenInclude(co => co.Subject)
+            .Where(sm => sm.Enrollment.StudentId == studentId 
+                && sm.DeletedAt == null 
+                && sm.GradedDate != null 
+                && sm.ObtainedMarks != null)
+            .OrderBy(sm => sm.GradedDate)
+            .Take(20)
+            .Select(sm => new GradeTrendItem
+            {
+                Date = sm.GradedDate!.Value.ToString("MMM dd"),
+                AssessmentName = sm.AssessmentItem.Name,
+                SubjectCode = sm.Enrollment.CourseOffering.Subject.Code,
+                Percentage = Math.Round(sm.ObtainedMarks!.Value / sm.AssessmentItem.MaxMarks * 100, 1)
+            })
+            .ToListAsync();
+
+        // Subject-wise Performance (aggregated scores per subject)
+        response.SubjectPerformances = await _context.StudentMarks
+            .Include(sm => sm.AssessmentItem)
+            .Include(sm => sm.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                    .ThenInclude(co => co.Subject)
+            .Where(sm => sm.Enrollment.StudentId == studentId 
+                && sm.DeletedAt == null 
+                && sm.ObtainedMarks != null
+                && sm.Enrollment.Status == "Active")
+            .GroupBy(sm => new { 
+                sm.Enrollment.CourseOffering.Subject.Code, 
+                sm.Enrollment.CourseOffering.Subject.Name 
+            })
+            .Select(g => new SubjectPerformance
+            {
+                SubjectCode = g.Key.Code,
+                SubjectName = g.Key.Name,
+                Score = g.Sum(m => m.ObtainedMarks ?? 0),
+                MaxScore = g.Sum(m => m.AssessmentItem.MaxMarks),
+                Percentage = g.Sum(m => m.AssessmentItem.MaxMarks) > 0 
+                    ? Math.Round(g.Sum(m => m.ObtainedMarks ?? 0) / g.Sum(m => m.AssessmentItem.MaxMarks) * 100, 1) 
+                    : 0,
+                AssessmentCount = g.Count()
+            })
+            .ToListAsync();
+
+        // Course Attendance breakdown
+        response.CourseAttendances = await _context.AttendanceRecords
+            .Include(ar => ar.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                    .ThenInclude(co => co.Subject)
+            .Where(ar => ar.Enrollment.StudentId == studentId 
+                && ar.DeletedAt == null
+                && ar.Enrollment.Status == "Active")
+            .GroupBy(ar => new {
+                ar.Enrollment.CourseOffering.Subject.Code,
+                ar.Enrollment.CourseOffering.Subject.Name
+            })
+            .Select(g => new CourseAttendance
+            {
+                SubjectCode = g.Key.Code,
+                SubjectName = g.Key.Name,
+                TotalClasses = g.Count(),
+                Present = g.Count(a => a.Status == "Present"),
+                Absent = g.Count(a => a.Status == "Absent"),
+                Late = g.Count(a => a.Status == "Late"),
+                Percentage = g.Count() > 0 
+                    ? Math.Round((decimal)(g.Count(a => a.Status == "Present" || a.Status == "Late")) / g.Count() * 100, 1) 
+                    : 0
+            })
+            .ToListAsync();
+
+        // Semester Performance Trend (historical semester data)
+        response.PerformanceTrend = await _context.CourseEnrollments
+            .Include(ce => ce.CourseOffering)
+                .ThenInclude(co => co.Subject)
+            .Where(ce => ce.StudentId == studentId 
+                && ce.DeletedAt == null 
+                && ce.Status == "Completed"
+                && ce.CourseOffering.Subject.Semester != null)
+            .GroupBy(ce => ce.CourseOffering.Subject.Semester!.Value)
+            .Select(g => new SemesterPerformance
+            {
+                Semester = g.Key,
+                CreditsEarned = (int)g.Sum(e => e.CourseOffering.Subject.Credit),
+                GPA = null, // Would need grade-to-GPA calculation
+                AttendancePercentage = 0 // Would need attendance lookup
+            })
+            .OrderBy(sp => sp.Semester)
+            .ToListAsync();
+
         // Get latest prediction for risk status
         var prediction = await _context.Predictions
             .Where(p => p.CourseEnrollment.StudentId == studentId && p.IsActive && p.DeletedAt == null)
@@ -417,6 +510,7 @@ public class DashboardService : IDashboardService
             response.CurrentCourses.Add(new FacultyCourseItem
             {
                 CourseOfferingId = co.Id,
+                SubjectId = co.SubjectId,
                 SubjectCode = co.Subject.Code,
                 SubjectName = co.Subject.Name,
                 BatchName = co.Batch.Name,
@@ -426,7 +520,9 @@ public class DashboardService : IDashboardService
                 PendingGrades = Math.Max(0, pendingGrades),
                 AverageScore = avgScore,
                 AverageAttendance = avgAttendance,
-                IsCoordinator = co.SubjectCoordinatorId == facultyId
+                IsCoordinator = co.SubjectCoordinatorId == facultyId,
+                StartDate = co.StartDate.HasValue ? co.StartDate.Value.ToDateTime(TimeOnly.MinValue) : (DateTime?)null,
+                EndDate = co.EndDate.HasValue ? co.EndDate.Value.ToDateTime(TimeOnly.MinValue) : (DateTime?)null,
             });
         }
 
@@ -584,6 +680,670 @@ public class DashboardService : IDashboardService
             .ToList();
 
         return response;
+    }
+
+    #endregion
+
+    #region Attendance Calendar
+
+    public async Task<AttendanceCalendarResponse> GetAttendanceCalendarAsync(int studentId, int? year = null, int? month = null, int? courseOfferingId = null)
+    {
+        var now = DateTime.Today;
+        var targetYear = year ?? now.Year;
+        var targetMonth = month ?? now.Month;
+        var today = DateOnly.FromDateTime(now);
+
+        var firstDayOfMonth = new DateOnly(targetYear, targetMonth, 1);
+        var lastDayOfMonth = firstDayOfMonth.AddMonths(1).AddDays(-1);
+
+        var response = new AttendanceCalendarResponse
+        {
+            StudentId = studentId,
+            Year = targetYear,
+            Month = targetMonth,
+            MonthName = firstDayOfMonth.ToString("MMMM yyyy"),
+            CourseOfferingId = courseOfferingId
+        };
+
+        // Get student enrollments
+        var enrollments = await _context.CourseEnrollments
+            .Include(ce => ce.CourseOffering)
+                .ThenInclude(co => co.Subject)
+            .Where(ce => ce.StudentId == studentId && ce.DeletedAt == null && ce.Status == "Active")
+            .ToListAsync();
+
+        if (!enrollments.Any())
+        {
+            return response;
+        }
+
+        // Populate available courses for filter
+        response.AvailableCourses = enrollments.Select(e => new AttendanceCalendarCourse
+        {
+            CourseOfferingId = e.CourseOfferingId,
+            EnrollmentId = e.Id,
+            SubjectCode = e.CourseOffering.Subject.Code,
+            SubjectName = e.CourseOffering.Subject.Name,
+            AttendancePercentage = e.AttendancePercentage ?? 0
+        }).ToList();
+
+        // Filter enrollments if course filter applied
+        var filteredEnrollments = courseOfferingId.HasValue
+            ? enrollments.Where(e => e.CourseOfferingId == courseOfferingId.Value).ToList()
+            : enrollments;
+
+        if (courseOfferingId.HasValue)
+        {
+            var course = response.AvailableCourses.FirstOrDefault(c => c.CourseOfferingId == courseOfferingId.Value);
+            if (course != null)
+            {
+                response.SubjectCode = course.SubjectCode;
+                response.SubjectName = course.SubjectName;
+            }
+        }
+
+        var enrollmentIds = filteredEnrollments.Select(e => e.Id).ToList();
+
+        // Get attendance records for the month
+        var attendanceRecords = await _context.AttendanceRecords
+            .Include(ar => ar.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                .ThenInclude(co => co.Subject)
+            .Include(ar => ar.RecordedByNavigation)
+                .ThenInclude(f => f!.IdNavigation)
+            .Where(ar => enrollmentIds.Contains(ar.EnrollmentId)
+                      && ar.DeletedAt == null
+                      && ar.AttendanceDate >= firstDayOfMonth
+                      && ar.AttendanceDate <= lastDayOfMonth)
+            .OrderBy(ar => ar.AttendanceDate)
+            .ToListAsync();
+
+        // Calculate summary
+        response.Summary = new AttendanceCalendarSummary
+        {
+            TotalClasses = attendanceRecords.Count,
+            PresentCount = attendanceRecords.Count(ar => ar.Status == "Present"),
+            AbsentCount = attendanceRecords.Count(ar => ar.Status == "Absent"),
+            LateCount = attendanceRecords.Count(ar => ar.Status == "Late"),
+            ExcusedCount = attendanceRecords.Count(ar => ar.Status == "Excused")
+        };
+
+        if (response.Summary.TotalClasses > 0)
+        {
+            var attended = response.Summary.PresentCount + response.Summary.LateCount + response.Summary.ExcusedCount;
+            response.Summary.AttendancePercentage = Math.Round((decimal)attended / response.Summary.TotalClasses * 100, 1);
+        }
+
+        // Build day-wise calendar entries
+        var groupedByDate = attendanceRecords.GroupBy(ar => ar.AttendanceDate).ToDictionary(g => g.Key, g => g.ToList());
+
+        for (var day = firstDayOfMonth; day <= lastDayOfMonth; day = day.AddDays(1))
+        {
+            var calendarDay = new AttendanceCalendarDay
+            {
+                Date = day,
+                DayOfMonth = day.Day,
+                IsWeekend = day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday,
+                IsToday = day == today
+            };
+
+            if (groupedByDate.TryGetValue(day, out var dayRecords))
+            {
+                calendarDay.Entries = dayRecords.Select(ar => new AttendanceCalendarEntry
+                {
+                    AttendanceRecordId = ar.Id,
+                    EnrollmentId = ar.EnrollmentId,
+                    CourseOfferingId = ar.Enrollment.CourseOfferingId,
+                    SubjectCode = ar.Enrollment.CourseOffering.Subject.Code,
+                    SubjectName = ar.Enrollment.CourseOffering.Subject.Name,
+                    Status = ar.Status,
+                    Remarks = ar.Remarks,
+                    RecordedByName = ar.RecordedByNavigation?.IdNavigation?.FullName
+                }).ToList();
+            }
+
+            response.Days.Add(calendarDay);
+        }
+
+        return response;
+    }
+
+    #endregion
+
+    #region Grade Analytics
+
+    /// <summary>
+    /// Get comprehensive grade analytics for a student
+    /// </summary>
+    public async Task<GradeAnalyticsResponse> GetGradeAnalyticsAsync(int studentId, int? semesterFilter = null)
+    {
+        var response = new GradeAnalyticsResponse();
+
+        // Fetch student info
+        var student = await _context.Students
+            .Include(s => s.IdNavigation)
+            .Include(s => s.Department)
+            .FirstOrDefaultAsync(s => s.Id == studentId && s.DeletedAt == null);
+
+        if (student == null)
+        {
+            throw new KeyNotFoundException($"Student with ID {studentId} not found");
+        }
+
+        response.StudentId = studentId;
+        response.FullName = student.IdNavigation?.FullName ?? "Unknown";
+        response.EnrollmentNumber = student.EnrollmentNumber ?? "";
+        response.CurrentSemester = student.CurrentSemester;
+
+        // Get all enrollments
+        var enrollmentsQuery = _context.CourseEnrollments
+            .Include(ce => ce.CourseOffering)
+                .ThenInclude(co => co.Subject)
+            .Include(ce => ce.StudentMarks.Where(sm => sm.DeletedAt == null))
+                .ThenInclude(sm => sm.AssessmentItem)
+                    .ThenInclude(ai => ai.EvaluationScheme)
+            .Where(ce => ce.StudentId == studentId && ce.DeletedAt == null);
+
+        if (semesterFilter.HasValue)
+        {
+            enrollmentsQuery = enrollmentsQuery.Where(ce => ce.CourseOffering.Subject.Semester == semesterFilter.Value);
+        }
+
+        var enrollments = await enrollmentsQuery.ToListAsync();
+
+        // Calculate GPA Overview
+        var completedEnrollments = enrollments.Where(e => e.Status == "Completed" && e.GradePoints.HasValue).ToList();
+        if (completedEnrollments.Any())
+        {
+            var totalGradeCredit = completedEnrollments.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+            var totalCredits = completedEnrollments.Sum(e => e.CourseOffering.Subject.Credit);
+            response.CGPA = totalCredits > 0 ? Math.Round(totalGradeCredit / totalCredits, 2) : null;
+            response.TotalCreditsEarned = totalCredits;
+        }
+
+        response.TotalCreditsAttempted = enrollments.Sum(e => e.CourseOffering.Subject.Credit);
+
+        // Calculate current semester GPA
+        var currentSemEnrollments = completedEnrollments
+            .Where(e => e.CourseOffering.Subject.Semester == response.CurrentSemester)
+            .ToList();
+        if (currentSemEnrollments.Any())
+        {
+            var semGradeCredit = currentSemEnrollments.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+            var semCredits = currentSemEnrollments.Sum(e => e.CourseOffering.Subject.Credit);
+            response.CurrentSemesterGPA = semCredits > 0 ? Math.Round(semGradeCredit / semCredits, 2) : null;
+        }
+
+        // Grade Distribution
+        var gradeGroups = enrollments
+            .Where(e => !string.IsNullOrEmpty(e.Grade))
+            .GroupBy(e => e.Grade!)
+            .Select(g => new { Grade = g.Key, Count = g.Count() })
+            .ToList();
+
+        var totalGraded = gradeGroups.Sum(g => g.Count);
+        var gradeColors = new Dictionary<string, string>
+        {
+            { "A+", "#10B981" }, { "A", "#34D399" }, { "A-", "#6EE7B7" },
+            { "B+", "#3B82F6" }, { "B", "#60A5FA" }, { "B-", "#93C5FD" },
+            { "C+", "#F59E0B" }, { "C", "#FBBF24" }, { "C-", "#FCD34D" },
+            { "D", "#EF4444" }, { "F", "#DC2626" }
+        };
+
+        response.GradeDistribution = gradeGroups.Select(g => new GradeDistributionItem
+        {
+            Grade = g.Grade,
+            Count = g.Count,
+            Percentage = totalGraded > 0 ? Math.Round((decimal)g.Count / totalGraded * 100, 1) : 0,
+            Color = gradeColors.TryGetValue(g.Grade, out var color) ? color : "#6B7280"
+        }).OrderByDescending(g => g.Grade).ToList();
+
+        // Course Grade Details
+        response.CourseGrades = enrollments.Select(e =>
+        {
+            var marks = e.StudentMarks.ToList();
+            var totalObtained = marks.Sum(m => m.ObtainedMarks ?? 0);
+            var totalMax = marks.Sum(m => m.AssessmentItem.MaxMarks);
+            var gradedMarks = marks.Where(m => m.ObtainedMarks.HasValue).ToList();
+            var pendingMarks = marks.Where(m => !m.ObtainedMarks.HasValue && !m.IsAbsent).ToList();
+
+            return new CourseGradeDetail
+            {
+                EnrollmentId = e.Id,
+                CourseOfferingId = e.CourseOfferingId,
+                SubjectCode = e.CourseOffering.Subject.Code,
+                SubjectName = e.CourseOffering.Subject.Name,
+                Semester = e.CourseOffering.Subject.Semester ?? 0,
+                Credits = e.CourseOffering.Subject.Credit,
+                Status = e.Status,
+                TotalObtained = totalObtained,
+                TotalMaxMarks = totalMax,
+                Percentage = totalMax > 0 ? Math.Round(totalObtained / totalMax * 100, 1) : 0,
+                Grade = e.Grade,
+                GradePoints = e.GradePoints,
+                TotalAssessments = marks.Count,
+                CompletedAssessments = gradedMarks.Count,
+                PendingAssessments = pendingMarks.Count,
+                Assessments = marks.Select(m => new AssessmentBreakdown
+                {
+                    AssessmentItemId = m.AssessmentItemId,
+                    Name = m.AssessmentItem.Name,
+                    Type = m.AssessmentItem.EvaluationScheme?.EvaluationType ?? "Other",
+                    MaxMarks = m.AssessmentItem.MaxMarks,
+                    ObtainedMarks = m.ObtainedMarks,
+                    Percentage = m.ObtainedMarks.HasValue && m.AssessmentItem.MaxMarks > 0
+                        ? Math.Round(m.ObtainedMarks.Value / m.AssessmentItem.MaxMarks * 100, 1)
+                        : null,
+                    Weight = m.AssessmentItem.Weight,
+                    IsGraded = m.ObtainedMarks.HasValue,
+                    IsAbsent = m.IsAbsent,
+                    GradedDate = m.GradedDate
+                }).OrderBy(a => a.Name).ToList()
+            };
+        }).OrderBy(c => c.Semester).ThenBy(c => c.SubjectCode).ToList();
+
+        // Assessment Type Performance
+        var allMarks = enrollments.SelectMany(e => e.StudentMarks).ToList();
+        var typeGroups = allMarks
+            .Where(m => m.ObtainedMarks.HasValue)
+            .GroupBy(m => m.AssessmentItem.EvaluationScheme?.EvaluationType ?? "Other")
+            .ToList();
+
+        response.AssessmentTypePerformances = typeGroups.Select(g => new AssessmentTypePerformance
+        {
+            Type = g.Key,
+            Count = g.Count(),
+            TotalMaxMarks = g.Sum(m => m.AssessmentItem.MaxMarks),
+            TotalObtained = g.Sum(m => m.ObtainedMarks ?? 0),
+            AveragePercentage = g.Sum(m => m.AssessmentItem.MaxMarks) > 0
+                ? Math.Round(g.Sum(m => m.ObtainedMarks ?? 0) / g.Sum(m => m.AssessmentItem.MaxMarks) * 100, 1)
+                : 0
+        }).OrderByDescending(t => t.Count).ToList();
+
+        // Semester GPAs for trend chart
+        var semesterGroups = completedEnrollments
+            .GroupBy(e => e.CourseOffering.Subject.Semester ?? 0)
+            .Where(g => g.Key > 0)
+            .ToList();
+
+        response.SemesterGPAs = semesterGroups.Select(g =>
+        {
+            var semGradeCredit = g.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+            var semCredits = g.Sum(e => e.CourseOffering.Subject.Credit);
+            return new SemesterGPAItem
+            {
+                Semester = g.Key,
+                SemesterLabel = $"Sem {g.Key}",
+                GPA = semCredits > 0 ? Math.Round(semGradeCredit / semCredits, 2) : null,
+                Credits = (int)semCredits,
+                CoursesCount = g.Count()
+            };
+        }).OrderBy(s => s.Semester).ToList();
+
+        // Credit Progress (assuming 160 total credits for now, could be department-specific)
+        response.TotalRequiredCredits = 160;
+        response.EarnedCredits = (int)response.TotalCreditsEarned;
+        response.CreditCompletionPercentage = response.TotalRequiredCredits > 0
+            ? Math.Round(response.TotalCreditsEarned / response.TotalRequiredCredits * 100, 1)
+            : 0;
+
+        return response;
+    }
+
+    /// <summary>
+    /// Calculate What-If GPA projections
+    /// </summary>
+    public async Task<WhatIfCalculatorResponse> CalculateWhatIfAsync(WhatIfCalculatorRequest request)
+    {
+        var response = new WhatIfCalculatorResponse();
+
+        // Fetch student info
+        var student = await _context.Students
+            .FirstOrDefaultAsync(s => s.Id == request.StudentId && s.DeletedAt == null);
+
+        if (student == null)
+        {
+            throw new KeyNotFoundException($"Student with ID {request.StudentId} not found");
+        }
+
+        response.CurrentSemester = student.CurrentSemester;
+
+        // Get all enrollments with marks
+        var enrollments = await _context.CourseEnrollments
+            .Include(ce => ce.CourseOffering)
+                .ThenInclude(co => co.Subject)
+            .Include(ce => ce.StudentMarks.Where(sm => sm.DeletedAt == null))
+                .ThenInclude(sm => sm.AssessmentItem)
+            .Where(ce => ce.StudentId == request.StudentId && ce.DeletedAt == null)
+            .ToListAsync();
+
+        // Calculate current CGPA
+        var completedEnrollments = enrollments.Where(e => e.Status == "Completed" && e.GradePoints.HasValue).ToList();
+        if (completedEnrollments.Any())
+        {
+            var totalGradeCredit = completedEnrollments.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+            var totalCredits = completedEnrollments.Sum(e => e.CourseOffering.Subject.Credit);
+            response.CurrentCGPA = totalCredits > 0 ? Math.Round(totalGradeCredit / totalCredits, 2) : null;
+            response.TotalCreditsEarned = totalCredits;
+        }
+
+        // Calculate current semester GPA
+        var currentSemEnrollments = completedEnrollments
+            .Where(e => e.CourseOffering.Subject.Semester == response.CurrentSemester)
+            .ToList();
+        if (currentSemEnrollments.Any())
+        {
+            var semGradeCredit = currentSemEnrollments.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+            var semCredits = currentSemEnrollments.Sum(e => e.CourseOffering.Subject.Credit);
+            response.CurrentSemesterGPA = semCredits > 0 ? Math.Round(semGradeCredit / semCredits, 2) : null;
+        }
+
+        // Build projections for active enrollments
+        var activeEnrollments = enrollments.Where(e => e.Status == "Active").ToList();
+        decimal projectedTotalGradeCredit = completedEnrollments.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+        decimal projectedTotalCredits = response.TotalCreditsEarned;
+        decimal projectedSemGradeCredit = 0;
+        decimal projectedSemCredits = 0;
+
+        foreach (var enrollment in activeEnrollments)
+        {
+            var marks = enrollment.StudentMarks.ToList();
+            var currentObtained = marks.Sum(m => m.ObtainedMarks ?? 0);
+            var currentMax = marks.Where(m => m.ObtainedMarks.HasValue).Sum(m => m.AssessmentItem.MaxMarks);
+            var pendingMax = marks.Where(m => !m.ObtainedMarks.HasValue && !m.IsAbsent).Sum(m => m.AssessmentItem.MaxMarks);
+
+            // Apply hypothetical grades for this enrollment
+            var hypotheticalForEnrollment = request.HypotheticalGrades
+                .Where(h => h.EnrollmentId == enrollment.Id)
+                .ToList();
+
+            decimal hypotheticalObtained = 0;
+            decimal hypotheticalMax = 0;
+            foreach (var hypo in hypotheticalForEnrollment)
+            {
+                hypotheticalObtained += hypo.ObtainedMarks;
+                hypotheticalMax += hypo.MaxMarks;
+            }
+
+            // Calculate projected percentage
+            var projectedObtained = currentObtained + hypotheticalObtained;
+            var projectedMax = currentMax + hypotheticalMax;
+            var currentPercentage = currentMax > 0 ? Math.Round(currentObtained / currentMax * 100, 1) : 0;
+            var projectedPercentage = projectedMax > 0 ? Math.Round(projectedObtained / projectedMax * 100, 1) : currentPercentage;
+
+            // Convert to grade
+            var projectedGrade = GradePointScale.GetGradeFromPercentage(projectedPercentage);
+            var projectedGradePoints = GradePointScale.GetGradePointsFromPercentage(projectedPercentage);
+
+            var projection = new CourseProjection
+            {
+                EnrollmentId = enrollment.Id,
+                CourseOfferingId = enrollment.CourseOfferingId,
+                SubjectCode = enrollment.CourseOffering.Subject.Code,
+                SubjectName = enrollment.CourseOffering.Subject.Name,
+                Credits = enrollment.CourseOffering.Subject.Credit,
+                CurrentPercentage = currentPercentage,
+                CurrentGrade = currentMax > 0 ? GradePointScale.GetGradeFromPercentage(currentPercentage) : null,
+                CurrentGradePoints = currentMax > 0 ? GradePointScale.GetGradePointsFromPercentage(currentPercentage) : null,
+                ProjectedPercentage = projectedPercentage,
+                ProjectedGrade = projectedGrade,
+                ProjectedGradePoints = projectedGradePoints,
+                PendingAssessments = marks.Count(m => !m.ObtainedMarks.HasValue && !m.IsAbsent),
+                PendingMaxMarks = pendingMax
+            };
+
+            response.CourseProjections.Add(projection);
+
+            // Add to projections
+            projectedTotalGradeCredit += projectedGradePoints * enrollment.CourseOffering.Subject.Credit;
+            projectedTotalCredits += enrollment.CourseOffering.Subject.Credit;
+
+            if (enrollment.CourseOffering.Subject.Semester == response.CurrentSemester)
+            {
+                projectedSemGradeCredit += projectedGradePoints * enrollment.CourseOffering.Subject.Credit;
+                projectedSemCredits += enrollment.CourseOffering.Subject.Credit;
+            }
+        }
+
+        // Also handle hypothetical course grades directly
+        foreach (var hypo in request.HypotheticalCourseGrades)
+        {
+            projectedTotalGradeCredit += hypo.GradePoints * hypo.Credits;
+            projectedTotalCredits += hypo.Credits;
+        }
+
+        // Calculate projected GPAs
+        response.ProjectedCGPA = projectedTotalCredits > 0 ? Math.Round(projectedTotalGradeCredit / projectedTotalCredits, 2) : null;
+        response.ProjectedCredits = projectedTotalCredits;
+
+        var totalSemCredits = projectedSemCredits + currentSemEnrollments.Sum(e => e.CourseOffering.Subject.Credit);
+        var totalSemGradeCredit = projectedSemGradeCredit + currentSemEnrollments.Sum(e => (e.GradePoints ?? 0) * e.CourseOffering.Subject.Credit);
+        response.ProjectedSemesterGPA = totalSemCredits > 0 ? Math.Round(totalSemGradeCredit / totalSemCredits, 2) : null;
+
+        // Calculate changes
+        response.CGPAChange = response.ProjectedCGPA.HasValue && response.CurrentCGPA.HasValue
+            ? response.ProjectedCGPA.Value - response.CurrentCGPA.Value
+            : null;
+        response.SemesterGPAChange = response.ProjectedSemesterGPA.HasValue && response.CurrentSemesterGPA.HasValue
+            ? response.ProjectedSemesterGPA.Value - response.CurrentSemesterGPA.Value
+            : null;
+
+        // Determine impact level
+        if (response.CGPAChange.HasValue)
+        {
+            response.ImpactLevel = response.CGPAChange.Value > 0.1m ? "Positive" :
+                                   response.CGPAChange.Value < -0.1m ? "Negative" : "Neutral";
+        }
+        else
+        {
+            response.ImpactLevel = "Neutral";
+        }
+
+        // Calculate target requirements for active courses
+        foreach (var projection in response.CourseProjections.Where(p => p.PendingAssessments > 0))
+        {
+            var enrollment = activeEnrollments.First(e => e.Id == projection.EnrollmentId);
+            var marks = enrollment.StudentMarks.ToList();
+            var currentObtained = marks.Sum(m => m.ObtainedMarks ?? 0);
+            var currentMax = marks.Where(m => m.ObtainedMarks.HasValue).Sum(m => m.AssessmentItem.MaxMarks);
+            var pendingMax = marks.Where(m => !m.ObtainedMarks.HasValue && !m.IsAbsent).Sum(m => m.AssessmentItem.MaxMarks);
+            var totalMax = marks.Sum(m => m.AssessmentItem.MaxMarks);
+
+            // Calculate what's needed for various target grades
+            foreach (var targetGrade in new[] { "A", "B+", "B" })
+            {
+                var targetPercentage = GradePointScale.GetMinPercentageForGrade(targetGrade);
+                var targetTotal = totalMax * targetPercentage / 100;
+                var neededInRemaining = targetTotal - currentObtained;
+                var neededPercentage = pendingMax > 0 ? Math.Round(neededInRemaining / pendingMax * 100, 1) : 0;
+
+                var isAchievable = neededPercentage <= 100;
+                var message = isAchievable
+                    ? $"Score {neededPercentage}% in remaining assessments"
+                    : $"Target grade is not achievable with remaining assessments";
+
+                response.TargetRequirements.Add(new TargetGradeRequirement
+                {
+                    EnrollmentId = projection.EnrollmentId,
+                    SubjectCode = projection.SubjectCode,
+                    SubjectName = projection.SubjectName,
+                    CurrentPercentage = projection.CurrentPercentage ?? 0,
+                    RequiredPercentageInRemaining = neededPercentage,
+                    TargetGrade = targetGrade,
+                    IsAchievable = isAchievable,
+                    Message = message
+                });
+            }
+        }
+
+        return response;
+    }
+
+    #endregion
+
+    #region Enhanced Analytics
+
+    public async Task<EnhancedAnalyticsResponse> GetEnhancedAnalyticsAsync(EnhancedAnalyticsRequest request, int? facultyScopeId = null)
+    {
+        var fromDate = request.FromDate ?? DateTime.UtcNow.AddMonths(-12);
+        var toDate = request.ToDate ?? DateTime.UtcNow;
+
+        var baseQuery = _context.StudentMarks
+            .Include(sm => sm.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                    .ThenInclude(co => co.Batch)
+            .Include(sm => sm.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                    .ThenInclude(co => co.Subject)
+            .Include(sm => sm.AssessmentItem)
+            .Include(sm => sm.Enrollment)
+                .ThenInclude(e => e.CourseOffering)
+                    .ThenInclude(co => co.FacultyAssignments)
+            .Where(sm => sm.DeletedAt == null
+                && sm.Enrollment.DeletedAt == null
+                && sm.Enrollment.CourseOffering.DeletedAt == null
+                && sm.AssessmentItem != null
+                && sm.ObtainedMarks != null
+                && sm.IsAbsent != true);
+
+        baseQuery = baseQuery.Where(sm =>
+            (sm.GradedDate ?? sm.CreatedAt) >= fromDate &&
+            (sm.GradedDate ?? sm.CreatedAt) <= toDate);
+
+        if (request.SubjectId.HasValue)
+        {
+            baseQuery = baseQuery.Where(sm => sm.Enrollment.CourseOffering.SubjectId == request.SubjectId.Value);
+        }
+
+        if (request.BatchId.HasValue)
+        {
+            baseQuery = baseQuery.Where(sm => sm.Enrollment.CourseOffering.BatchId == request.BatchId.Value);
+        }
+
+        if (request.CourseOfferingId.HasValue)
+        {
+            baseQuery = baseQuery.Where(sm => sm.Enrollment.CourseOfferingId == request.CourseOfferingId.Value);
+        }
+
+        var scopedFacultyId = facultyScopeId ?? request.FacultyId;
+        if (scopedFacultyId.HasValue)
+        {
+            baseQuery = baseQuery.Where(sm => sm.Enrollment.CourseOffering.FacultyAssignments
+                .Any(fa => fa.DeletedAt == null && fa.FacultyId == scopedFacultyId.Value));
+        }
+
+        var records = await baseQuery
+            .Select(sm => new
+            {
+                BatchId = sm.Enrollment.CourseOffering.BatchId,
+                BatchName = sm.Enrollment.CourseOffering.Batch.Name,
+                sm.Enrollment.CourseOfferingId,
+                SubjectCode = sm.Enrollment.CourseOffering.Subject.Code,
+                SubjectName = sm.Enrollment.CourseOffering.Subject.Name,
+                AssessmentItemId = sm.AssessmentItemId,
+                StudentId = sm.Enrollment.StudentId,
+                Percentage = sm.AssessmentItem.MaxMarks > 0
+                    ? Math.Round((decimal)(sm.ObtainedMarks ?? 0) / sm.AssessmentItem.MaxMarks * 100, 2)
+                    : 0,
+                GradedOn = sm.GradedDate ?? sm.CreatedAt
+            })
+            .ToListAsync();
+
+        var response = new EnhancedAnalyticsResponse();
+
+        if (!records.Any())
+        {
+            return response;
+        }
+
+        response.CrossBatchPerformance = records
+            .GroupBy(r => new { r.BatchId, r.BatchName, r.CourseOfferingId, r.SubjectCode, r.SubjectName })
+            .Select(g =>
+            {
+                var ordered = g.Select(x => x.Percentage).OrderBy(x => x).ToList();
+                var count = ordered.Count;
+                decimal median;
+                if (count == 0)
+                {
+                    median = 0;
+                }
+                else if (count % 2 == 1)
+                {
+                    median = ordered[count / 2];
+                }
+                else
+                {
+                    median = (ordered[(count / 2) - 1] + ordered[count / 2]) / 2;
+                }
+
+                return new CrossBatchPerformanceItem
+                {
+                    BatchId = g.Key.BatchId,
+                    BatchName = g.Key.BatchName ?? "Unknown Batch",
+                    CourseOfferingId = g.Key.CourseOfferingId,
+                    SubjectCode = g.Key.SubjectCode,
+                    SubjectName = g.Key.SubjectName,
+                    AveragePercentage = Math.Round(g.Average(x => x.Percentage), 2),
+                    MedianPercentage = Math.Round(median, 2),
+                    StudentCount = g.Select(x => x.StudentId).Distinct().Count(),
+                    AssessmentCount = g.Select(x => x.AssessmentItemId).Distinct().Count()
+                };
+            })
+            .Where(x => x.StudentCount >= request.MinStudents)
+            .OrderByDescending(x => x.AveragePercentage)
+            .ToList();
+
+        response.GradeDistributions = records
+            .GroupBy(r => new { r.BatchId, r.BatchName, r.CourseOfferingId, r.SubjectCode })
+            .Select(g =>
+            {
+                var total = g.Count();
+                var values = g.Select(x => x.Percentage).ToList();
+
+                return new GradeDistributionSeries
+                {
+                    Label = !string.IsNullOrWhiteSpace(g.Key.BatchName) ? g.Key.BatchName : "Batch",
+                    BatchId = g.Key.BatchId,
+                    CourseOfferingId = g.Key.CourseOfferingId,
+                    Buckets = new List<GradeBucket>
+                    {
+                        BuildBucket("A", values, total, p => p >= 85),
+                        BuildBucket("B", values, total, p => p >= 70 && p < 85),
+                        BuildBucket("C", values, total, p => p >= 55 && p < 70),
+                        BuildBucket("D", values, total, p => p >= 40 && p < 55),
+                        BuildBucket("F", values, total, p => p < 40)
+                    }
+                };
+            })
+            .ToList();
+
+        response.GradeTrends = records
+            .GroupBy(r => new { r.GradedOn.Year, r.GradedOn.Month })
+            .Select(g => new GradeTrendPoint
+            {
+                Year = g.Key.Year,
+                Month = g.Key.Month,
+                Label = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("yyyy-MM"),
+                AveragePercentage = Math.Round(g.Average(x => x.Percentage), 2),
+                SampleSize = g.Count()
+            })
+            .OrderBy(t => t.Year)
+            .ThenBy(t => t.Month)
+            .ToList();
+
+        return response;
+    }
+
+    private static GradeBucket BuildBucket(string grade, IEnumerable<decimal> values, int total, Func<decimal, bool> predicate)
+    {
+        var count = values.Count(predicate);
+        var percentage = total > 0 ? Math.Round((decimal)count / total * 100, 2) : 0;
+        return new GradeBucket
+        {
+            Grade = grade,
+            Count = count,
+            Percentage = percentage
+        };
     }
 
     #endregion

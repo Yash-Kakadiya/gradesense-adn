@@ -228,6 +228,17 @@ namespace GradeSense.API.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<StudentMark>> GetByEnrollmentIdsAsync(IEnumerable<int> enrollmentIds)
+        {
+            var idList = enrollmentIds.ToList();
+            if (!idList.Any()) return new List<StudentMark>();
+            
+            return await _context.StudentMarks
+                .Include(sm => sm.AssessmentItem)
+                .Where(sm => idList.Contains(sm.EnrollmentId) && sm.DeletedAt == null)
+                .ToListAsync();
+        }
+
         public async Task<StudentMark?> FindByStudentAndAssessmentAsync(int studentId, int assessmentItemId)
         {
             return await _context.StudentMarks
@@ -235,6 +246,24 @@ namespace GradeSense.API.Repositories
                 .FirstOrDefaultAsync(sm => 
                     sm.Enrollment.StudentId == studentId && 
                     sm.AssessmentItemId == assessmentItemId && 
+                    sm.DeletedAt == null);
+        }
+
+        public async Task<StudentMark?> GetByEnrollmentAndAssessmentAsync(int enrollmentId, int assessmentItemId)
+        {
+            return await _context.StudentMarks
+                .Include(sm => sm.Enrollment)
+                    .ThenInclude(e => e.Student)
+                        .ThenInclude(s => s.IdNavigation)
+                .Include(sm => sm.Enrollment)
+                    .ThenInclude(e => e.CourseOffering)
+                        .ThenInclude(co => co.Subject)
+                .Include(sm => sm.AssessmentItem)
+                .Include(sm => sm.Grader)
+                    .ThenInclude(g => g.IdNavigation)
+                .FirstOrDefaultAsync(sm =>
+                    sm.EnrollmentId == enrollmentId &&
+                    sm.AssessmentItemId == assessmentItemId &&
                     sm.DeletedAt == null);
         }
     }

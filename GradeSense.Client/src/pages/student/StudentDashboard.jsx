@@ -10,7 +10,7 @@ import { ROUTES } from '@/utils/constants'
 import { formatDate } from '@/utils/helpers'
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, RadialBarChart, RadialBar, Legend
+    PieChart, Pie, Cell, RadialBarChart, RadialBar, Legend, LineChart, Line, Area, AreaChart
 } from 'recharts'
 import {
     BookOpen,
@@ -28,6 +28,8 @@ import {
     Target,
     Clock,
     FileText,
+    Activity,
+    PieChart as PieIcon,
 } from 'lucide-react'
 
 const StudentDashboard = () => {
@@ -65,6 +67,9 @@ const StudentDashboard = () => {
     const data = dashboard?.Data || dashboard || {}
     const currentCourses = data.CurrentCourses || []
     const recentGrades = data.RecentGrades || []
+    const gradeTrend = data.GradeTrend || []
+    const subjectPerformances = data.SubjectPerformances || []
+    const courseAttendances = data.CourseAttendances || []
 
     // Prepare chart data from courses
     const coursePerformanceData = currentCourses.map(course => ({
@@ -73,11 +78,48 @@ const StudentDashboard = () => {
         attendance: course.AttendancePercentage || 0,
     }))
 
+    // Grade trend line chart data
+    const gradeTrendData = gradeTrend.map((item, index) => ({
+        name: item.Date || `A${index + 1}`,
+        percentage: item.Percentage || 0,
+        subject: item.SubjectCode || '',
+        assessment: item.AssessmentName || '',
+    }))
+
+    // Subject performance data for bar chart
+    const subjectPerformanceData = subjectPerformances.map(sp => ({
+        name: sp.SubjectCode || sp.SubjectName?.substring(0, 6),
+        score: sp.Percentage || 0,
+        fullName: sp.SubjectName,
+        assessments: sp.AssessmentCount,
+    }))
+
+    // Course attendance breakdown
+    const courseAttendanceData = courseAttendances.map(ca => ({
+        name: ca.SubjectCode || ca.SubjectName?.substring(0, 6),
+        present: ca.Present || 0,
+        absent: ca.Absent || 0,
+        late: ca.Late || 0,
+        percentage: ca.Percentage || 0,
+        total: ca.TotalClasses || 0,
+    }))
+
     // Attendance distribution
     const attendanceData = [
         { name: 'Present', value: data.TotalClassesAttended || 0, color: '#10b981' },
-        { name: 'Absent', value: Math.max(0, (data.TotalClasses || 0) - (data.TotalClassesAttended || 0)), color: '#ef4444' },
+        { name: 'Absent', value: Math.max(0, (data.TotalClassesMissed || 0)), color: '#ef4444' },
     ].filter(item => item.value > 0)
+
+    // Colors for charts
+    const CHART_COLORS = {
+        primary: '#3b82f6',
+        success: '#10b981',
+        warning: '#f59e0b',
+        danger: '#ef4444',
+        purple: '#8b5cf6',
+        pink: '#ec4899',
+        gradient: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'],
+    }
 
     const getGradeBadgeColor = (grade) => {
         if (!grade || grade === '-') return 'default'
@@ -192,16 +234,76 @@ const StudentDashboard = () => {
                 ))}
             </div>
 
+            {/* Grade Trend Line Chart - Full Width */}
+            {gradeTrendData.length > 0 && (
+                <Card className="border-0 shadow-md overflow-hidden">
+                    <Card.Header className="border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+                        <Card.Title className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-blue-100">
+                                <Activity className="w-4 h-4 text-blue-600" />
+                            </div>
+                            Grade Trend
+                            <Badge variant="info" className="ml-2 text-xs">Last {gradeTrendData.length} assessments</Badge>
+                        </Card.Title>
+                    </Card.Header>
+                    <Card.Body>
+                        <ResponsiveContainer width="100%" height={280}>
+                            <AreaChart data={gradeTrendData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                <defs>
+                                    <linearGradient id="colorGrade" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                                <Tooltip
+                                    content={({ active, payload, label }) => {
+                                        if (active && payload && payload.length) {
+                                            const data = payload[0].payload
+                                            return (
+                                                <div className="bg-white px-4 py-3 rounded-xl shadow-xl border border-gray-100">
+                                                    <p className="text-xs text-gray-500">{data.subject}</p>
+                                                    <p className="text-sm font-semibold text-gray-800">{data.assessment}</p>
+                                                    <p className="text-lg font-bold text-blue-600">{data.percentage}%</p>
+                                                </div>
+                                            )
+                                        }
+                                        return null
+                                    }}
+                                />
+                                <Area
+                                    type="monotone"
+                                    dataKey="percentage"
+                                    stroke="#3b82f6"
+                                    strokeWidth={2}
+                                    fill="url(#colorGrade)"
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="percentage"
+                                    stroke="#3b82f6"
+                                    strokeWidth={2}
+                                    dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                                    activeDot={{ r: 6, fill: '#3b82f6' }}
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </Card.Body>
+                </Card>
+            )}
+
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Course Performance Bar Chart */}
+                {/* Subject Performance Bar Chart */}
                 <Card className="lg:col-span-2 border-0 shadow-md">
                     <Card.Header className="border-b bg-gray-50/50">
                         <Card.Title className="flex items-center gap-2">
                             <div className="p-1.5 rounded-lg bg-emerald-100">
                                 <BarChart3 className="w-4 h-4 text-emerald-600" />
                             </div>
-                            Course Performance
+                            Subject Performance
                         </Card.Title>
                     </Card.Header>
                     <Card.Body>
@@ -209,25 +311,41 @@ const StudentDashboard = () => {
                             <div className="h-64 flex items-center justify-center">
                                 <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
                             </div>
-                        ) : coursePerformanceData.length === 0 ? (
+                        ) : subjectPerformanceData.length === 0 ? (
                             <div className="h-64 flex items-center justify-center text-gray-500">
                                 <div className="text-center">
                                     <BarChart3 className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                                    <p>No course data available</p>
+                                    <p>No performance data available</p>
                                 </div>
                             </div>
                         ) : (
                             <ResponsiveContainer width="100%" height={280}>
-                                <BarChart data={coursePerformanceData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                <BarChart data={subjectPerformanceData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                    <defs>
+                                        <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.9} />
+                                            <stop offset="95%" stopColor="#059669" stopOpacity={0.9} />
+                                        </linearGradient>
+                                    </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                                    <YAxis tick={{ fontSize: 12 }} domain={[0, 100]} />
+                                    <YAxis tick={{ fontSize: 12 }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
                                     <Tooltip
-                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                                        content={({ active, payload }) => {
+                                            if (active && payload && payload.length) {
+                                                const data = payload[0].payload
+                                                return (
+                                                    <div className="bg-white px-4 py-3 rounded-xl shadow-xl border border-gray-100">
+                                                        <p className="text-sm font-semibold text-gray-800">{data.fullName}</p>
+                                                        <p className="text-lg font-bold text-emerald-600">{data.score}%</p>
+                                                        <p className="text-xs text-gray-500">{data.assessments} assessments</p>
+                                                    </div>
+                                                )
+                                            }
+                                            return null
+                                        }}
                                     />
-                                    <Legend />
-                                    <Bar dataKey="score" name="Score %" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="attendance" name="Attendance %" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="score" name="Score" fill="url(#colorScore)" radius={[6, 6, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
                         )}
@@ -239,7 +357,7 @@ const StudentDashboard = () => {
                     <Card.Header className="border-b bg-gray-50/50">
                         <Card.Title className="flex items-center gap-2">
                             <div className="p-1.5 rounded-lg bg-purple-100">
-                                <Calendar className="w-4 h-4 text-purple-600" />
+                                <PieIcon className="w-4 h-4 text-purple-600" />
                             </div>
                             Attendance Overview
                         </Card.Title>
@@ -257,30 +375,93 @@ const StudentDashboard = () => {
                                 </div>
                             </div>
                         ) : (
-                            <ResponsiveContainer width="100%" height={280}>
-                                <PieChart>
-                                    <Pie
-                                        data={attendanceData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={50}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    >
-                                        {attendanceData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend />
-                                </PieChart>
-                            </ResponsiveContainer>
+                            <div className="relative">
+                                <ResponsiveContainer width="100%" height={220}>
+                                    <PieChart>
+                                        <Pie
+                                            data={attendanceData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={55}
+                                            outerRadius={80}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                        >
+                                            {attendanceData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                {/* Center text */}
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ marginTop: '-30px' }}>
+                                    <div className="text-center">
+                                        <p className="text-3xl font-bold text-gray-900">{data.OverallAttendancePercentage || 0}%</p>
+                                        <p className="text-xs text-gray-500">Overall</p>
+                                    </div>
+                                </div>
+                                {/* Legend */}
+                                <div className="flex justify-center gap-6 mt-2">
+                                    {attendanceData.map((entry, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                                            <span className="text-sm text-gray-600">{entry.name}: {entry.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         )}
                     </Card.Body>
                 </Card>
             </div>
+
+            {/* Course Attendance Breakdown - New Section */}
+            {courseAttendanceData.length > 0 && (
+                <Card className="border-0 shadow-md">
+                    <Card.Header className="border-b bg-gradient-to-r from-purple-50 to-pink-50">
+                        <Card.Title className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-purple-100">
+                                <Calendar className="w-4 h-4 text-purple-600" />
+                            </div>
+                            Attendance by Subject
+                        </Card.Title>
+                    </Card.Header>
+                    <Card.Body>
+                        <ResponsiveContainer width="100%" height={280}>
+                            <BarChart data={courseAttendanceData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                                <YAxis tick={{ fontSize: 12 }} />
+                                <Tooltip
+                                    content={({ active, payload }) => {
+                                        if (active && payload && payload.length) {
+                                            const data = payload[0].payload
+                                            return (
+                                                <div className="bg-white px-4 py-3 rounded-xl shadow-xl border border-gray-100">
+                                                    <p className="text-sm font-semibold text-gray-800 mb-2">{data.name}</p>
+                                                    <div className="space-y-1 text-xs">
+                                                        <p className="text-emerald-600">Present: {data.present}</p>
+                                                        <p className="text-red-600">Absent: {data.absent}</p>
+                                                        <p className="text-amber-600">Late: {data.late}</p>
+                                                        <p className="text-gray-500 mt-1">Total: {data.total} classes</p>
+                                                        <p className="text-lg font-bold text-purple-600 mt-1">{data.percentage}%</p>
+                                                    </div>
+                                                </div>
+                                            )
+                                        }
+                                        return null
+                                    }}
+                                />
+                                <Legend />
+                                <Bar dataKey="present" name="Present" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                                <Bar dataKey="late" name="Late" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+                                <Bar dataKey="absent" name="Absent" stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </Card.Body>
+                </Card>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Current Courses */}

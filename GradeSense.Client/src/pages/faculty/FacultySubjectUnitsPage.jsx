@@ -213,7 +213,7 @@ const FacultySubjectUnitsPage = () => {
     const [formModalOpen, setFormModalOpen] = useState(false)
     const [selectedUnit, setSelectedUnit] = useState(null)
     const [deleteTarget, setDeleteTarget] = useState(null)
-    const pageSize = 12
+    const [pageSize, setPageSize] = useState(12)
     const debouncedSearch = useDebounce(searchTerm, 300)
 
     // Fetch faculty's courses to get subjects
@@ -293,7 +293,7 @@ const FacultySubjectUnitsPage = () => {
         })
     }, [units, debouncedSearch])
 
-    const totalCount = unitsData?.Data?.TotalCount || filteredUnits.length
+    const totalCount = unitsData?.Data?.TotalRecords || filteredUnits.length
     const totalPages = Math.ceil(totalCount / pageSize)
 
     // Create mutation
@@ -418,7 +418,7 @@ const FacultySubjectUnitsPage = () => {
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">
-                                    {units.reduce((sum, u) => sum + (u.Hours || 0), 0)}
+                                    {units.reduce((sum, u) => sum + (u.TeachingHours || 0), 0)}
                                 </p>
                                 <p className="text-sm text-gray-600">Total Hours</p>
                             </div>
@@ -495,7 +495,13 @@ const FacultySubjectUnitsPage = () => {
                             <Pagination
                                 currentPage={currentPage}
                                 totalPages={totalPages}
+                                totalItems={totalCount}
+                                pageSize={pageSize}
                                 onPageChange={setCurrentPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setCurrentPage(1)
+                                }}
                             />
                         </div>
                     )}

@@ -11,6 +11,7 @@ namespace GradeSense.API.Interfaces.Repositories
         Task<Prediction> UpdateAsync(Prediction prediction);
         Task<bool> DeleteAsync(string id);
         Task<int> DeleteByEnrollmentIdAsync(int enrollmentId);
+        Task<int> DeactivateByEnrollmentIdAsync(int enrollmentId);
         Task<bool> ExistsAsync(string id);
     }
 }

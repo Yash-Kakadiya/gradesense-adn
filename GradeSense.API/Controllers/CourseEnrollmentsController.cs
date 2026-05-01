@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Faculty")]
+    [Authorize]
     public class CourseEnrollmentsController : ControllerBase
     {
         private readonly ICourseEnrollmentService _courseEnrollmentService;
@@ -40,7 +40,7 @@ namespace GradeSense.API.Controllers
                 // Students can only see their own enrollments
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId))
                     {
                         return Forbid();
@@ -85,7 +85,7 @@ namespace GradeSense.API.Controllers
                 // Students can only view their own enrollments
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId) || courseEnrollment.StudentId != studentId)
                     {
                         return Forbid();
@@ -110,6 +110,7 @@ namespace GradeSense.API.Controllers
         /// Create a new course enrollment
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<CourseEnrollmentResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<CourseEnrollmentResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<CourseEnrollmentResponse>>> Create(
@@ -152,6 +153,7 @@ namespace GradeSense.API.Controllers
         /// Bulk enroll students to a course offering
         /// </summary>
         [HttpPost("bulk")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<BulkEnrollResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<BulkEnrollResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<BulkEnrollResponse>>> BulkEnroll(
@@ -189,6 +191,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing course enrollment
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<CourseEnrollmentResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<CourseEnrollmentResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<CourseEnrollmentResponse>), StatusCodes.Status400BadRequest)]
@@ -230,6 +233,7 @@ namespace GradeSense.API.Controllers
         /// Delete a course enrollment (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
@@ -262,5 +266,142 @@ namespace GradeSense.API.Controllers
                 ));
             }
         }
+
+        #region Bulk Import Endpoints
+
+        /// <summary>
+        /// Download Excel template for student enrollment import
+        /// </summary>
+        /// <remarks>
+        /// Returns an Excel template with example roll numbers for bulk enrollment
+        /// </remarks>
+        [HttpGet("import/template/excel/{courseOfferingId}")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetEnrollmentTemplateExcel(int courseOfferingId)
+        {
+            try
+            {
+                var excelBytes = await _courseEnrollmentService.GetEnrollmentTemplateExcelAsync(courseOfferingId);
+                return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    $"enrollment_template_course_{courseOfferingId}.xlsx");
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating enrollment template for course offering {CourseOfferingId}", courseOfferingId);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse(
+                    "An error occurred while generating template"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Validate enrollment import file and return preview with conflicts
+        /// </summary>
+        /// <remarks>
+        /// Accepts Excel (.xlsx) or CSV (.csv) files.
+        /// Returns validation results with conflict detection for existing enrollments.
+        /// </remarks>
+        [HttpPost("import/validate")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(ApiResponse<BulkEnrollmentValidationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkEnrollmentValidationResponse>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkEnrollmentValidationResponse>>> ValidateEnrollmentImport(
+            [FromQuery] int courseOfferingId,
+            IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(ApiResponse<BulkEnrollmentValidationResponse>.ErrorResponse("No file uploaded"));
+                }
+
+                var extension = Path.GetExtension(file.FileName).ToLower();
+                if (extension != ".csv" && extension != ".xlsx" && extension != ".xls")
+                {
+                    return BadRequest(ApiResponse<BulkEnrollmentValidationResponse>.ErrorResponse(
+                        "Only CSV and Excel files are supported"
+                    ));
+                }
+
+                using var stream = file.OpenReadStream();
+                var result = await _courseEnrollmentService.ValidateEnrollmentImportAsync(courseOfferingId, stream, extension);
+
+                return Ok(ApiResponse<BulkEnrollmentValidationResponse>.SuccessResponse(
+                    result,
+                    $"Validation complete: {result.ValidRows} valid, {result.InvalidRows} invalid, {result.ConflictRows} conflicts"
+                ));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkEnrollmentValidationResponse>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating enrollment import");
+                return StatusCode(500, ApiResponse<BulkEnrollmentValidationResponse>.ErrorResponse(
+                    "An error occurred while validating import file"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Import student enrollments with validation and conflict resolution
+        /// </summary>
+        /// <remarks>
+        /// Import enrollments with specified conflict resolution strategy: Skip, Update (re-activate), or Error
+        /// </remarks>
+        [HttpPost("import/execute")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>>> ExecuteEnrollmentImport(
+            [FromBody] BulkEnrollmentImportRequest request)
+        {
+            try
+            {
+                if (request.Rows == null || request.Rows.Count == 0)
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>.ErrorResponse(
+                        "No enrollment data provided"
+                    ));
+                }
+
+                var result = await _courseEnrollmentService.ImportEnrollmentsWithValidationAsync(request);
+
+                await _auditLogger.LogAsync("BulkImport", "CourseEnrollment",
+                    $"offering-{request.CourseOfferingId}",
+                    $"Bulk imported {result.SuccessCount} enrollments, {result.ErrorCount} failed");
+
+                var message = result.IsSuccess
+                    ? $"Import completed successfully. {result.SuccessCount} students enrolled."
+                    : $"Import completed with errors. {result.SuccessCount} succeeded, {result.ErrorCount} failed.";
+
+                return Ok(ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>.SuccessResponse(result, message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing enrollment import");
+                return StatusCode(500, ApiResponse<BulkOperationResponse<CourseEnrollmentResponse>>.ErrorResponse(
+                    "An error occurred while importing enrollments"
+                ));
+            }
+        }
+
+        #endregion
     }
 }

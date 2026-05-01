@@ -29,6 +29,7 @@ export const ROUTES = {
     ADMIN_COURSE_OFFERINGS: '/admin/course-offerings',
     ADMIN_EVALUATION_SCHEMES: '/admin/evaluation-schemes',
     ADMIN_AUDIT_LOGS: '/admin/audit-logs',
+    ADMIN_ANALYTICS: '/admin/analytics',
 
     // Faculty
     FACULTY_DASHBOARD: '/faculty/dashboard',
@@ -43,12 +44,14 @@ export const ROUTES = {
     FACULTY_ATTENDANCE: '/faculty/attendance',
     FACULTY_AT_RISK: '/faculty/at-risk',
     FACULTY_REPORTS: '/faculty/reports',
+    FACULTY_ANALYTICS: '/faculty/analytics',
 
     // Student
     STUDENT_DASHBOARD: '/student/dashboard',
     STUDENT_COURSES: '/student/courses',
     STUDENT_GRADES: '/student/grades',
     STUDENT_ATTENDANCE: '/student/attendance',
+    STUDENT_FACULTIES: '/student/faculties',
     STUDENT_PROFILE: '/student/profile',
 }
 

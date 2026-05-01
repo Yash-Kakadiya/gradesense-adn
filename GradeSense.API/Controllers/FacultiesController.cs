@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Student")]
     public class FacultiesController : ControllerBase
     {
         private readonly IFacultyService _facultyService;
@@ -30,6 +30,7 @@ namespace GradeSense.API.Controllers
         /// Get all faculties with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Student")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<FacultyListResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<FacultyListResponse>>>> GetAll(
             [FromQuery] FacultyFilterRequest filter)
@@ -209,5 +210,108 @@ namespace GradeSense.API.Controllers
                 ));
             }
         }
+
+        #region Bulk Import
+
+        /// <summary>
+        /// Download faculty import template
+        /// </summary>
+        /// <returns>Excel template file</returns>
+        [HttpGet("import/template")]
+        [Authorize(Roles = "Admin")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetImportTemplate()
+        {
+            try
+            {
+                var templateBytes = await _facultyService.GetFacultyImportTemplateAsync();
+                return File(templateBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "faculty_import_template.xlsx");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating faculty import template");
+                return StatusCode(500, ApiResponse<string>.ErrorResponse("Failed to generate template"));
+            }
+        }
+
+        /// <summary>
+        /// Validate faculty import file
+        /// </summary>
+        /// <param name="file">Excel or CSV file</param>
+        /// <returns>Validation results with preview</returns>
+        [HttpPost("import/validate")]
+        [Authorize(Roles = "Admin")]
+        [ProducesResponseType(typeof(ApiResponse<BulkFacultyValidationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkFacultyValidationResponse>>> ValidateImport(IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(ApiResponse<BulkFacultyValidationResponse>.ErrorResponse("No file uploaded"));
+                }
+
+                var extension = Path.GetExtension(file.FileName).ToLower();
+                if (extension != ".xlsx" && extension != ".xls" && extension != ".csv")
+                {
+                    return BadRequest(ApiResponse<BulkFacultyValidationResponse>.ErrorResponse("Invalid file type. Only Excel (.xlsx, .xls) and CSV (.csv) files are supported"));
+                }
+
+                using var stream = file.OpenReadStream();
+                var result = await _facultyService.ValidateFacultyImportAsync(stream, extension);
+
+                return Ok(ApiResponse<BulkFacultyValidationResponse>.SuccessResponse(
+                    result,
+                    "File validated successfully"
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating faculty import file");
+                return StatusCode(500, ApiResponse<BulkFacultyValidationResponse>.ErrorResponse(
+                    "An error occurred while validating the file"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Execute faculty import
+        /// </summary>
+        /// <param name="request">Import request with validated rows</param>
+        /// <returns>Import results</returns>
+        [HttpPost("import/execute")]
+        [Authorize(Roles = "Admin")]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<FacultyResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkOperationResponse<FacultyResponse>>>> ExecuteImport([FromBody] BulkFacultyImportRequest request)
+        {
+            try
+            {
+                if (request.Rows == null || !request.Rows.Any())
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<FacultyResponse>>.ErrorResponse("No rows to import"));
+                }
+
+                var result = await _facultyService.ImportFacultiesWithValidationAsync(request);
+
+                // Create audit log
+                await _auditLogger.LogAsync("BulkImport", "Faculty", null, $"Bulk imported {result.SuccessCount} faculties, {result.ErrorCount} errors");
+
+                return Ok(ApiResponse<BulkOperationResponse<FacultyResponse>>.SuccessResponse(
+                    result,
+                    $"Import completed: {result.SuccessCount} successful, {result.ErrorCount} errors"
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing faculty import");
+                return StatusCode(500, ApiResponse<BulkOperationResponse<FacultyResponse>>.ErrorResponse(
+                    "An error occurred while importing faculties"
+                ));
+            }
+        }
+
+        #endregion
     }
 }

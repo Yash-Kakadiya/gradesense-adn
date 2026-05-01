@@ -4,7 +4,7 @@ import { API_ENDPOINTS } from '@/utils/constants'
 export const attendanceService = {
     /**
      * Get all attendance records with pagination and filters
-     * @param {Object} params - { pageNumber, pageSize, studentId, courseOfferingId, date, status }
+     * @param {Object} params - { pageNumber, pageSize, studentId, courseOfferingId, fromDate, toDate, status }
      * @returns {Promise}
      */
     getAll: (params = {}) => {
@@ -73,5 +73,42 @@ export const attendanceService = {
      */
     getSummaryByStudent: (studentId) => {
         return api.get(`${API_ENDPOINTS.ATTENDANCE_RECORDS}/summary/student/${studentId}`)
+    },
+
+    /**
+     * Download Excel template for attendance import
+     * @param {number} courseOfferingId
+     * @returns {Promise<Blob>}
+     */
+    getTemplateExcel: async (courseOfferingId) => {
+        const response = await api.get(`${API_ENDPOINTS.ATTENDANCE_RECORDS}/import/template/excel/${courseOfferingId}`, {
+            responseType: 'blob'
+        })
+        return response
+    },
+
+    /**
+     * Validate attendance import file and get preview
+     * @param {number} courseOfferingId
+     * @param {string} date - ISO date string (YYYY-MM-DD)
+     * @param {File} file
+     * @returns {Promise}
+     */
+    validateImport: (courseOfferingId, date, file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post(`${API_ENDPOINTS.ATTENDANCE_RECORDS}/import/validate`, formData, {
+            params: { courseOfferingId, date },
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+    },
+
+    /**
+     * Execute attendance import with conflict resolution
+     * @param {Object} data - { courseOfferingId, attendanceDate, markedById, conflictResolution, rows }
+     * @returns {Promise}
+     */
+    executeImport: (data) => {
+        return api.post(`${API_ENDPOINTS.ATTENDANCE_RECORDS}/import/execute`, data)
     },
 }

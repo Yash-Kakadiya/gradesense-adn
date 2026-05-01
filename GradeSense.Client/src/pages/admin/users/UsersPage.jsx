@@ -10,6 +10,7 @@ import {
     Card,
     ConfirmDialog,
     ExportDropdown,
+    BulkImportModal,
 } from '@/components/common'
 import { userService } from '@/services/userService'
 import { dashboardService } from '@/services/dashboardService'
@@ -17,7 +18,7 @@ import { exportUsersToCsv, exportUsersToExcel, downloadBlob } from '@/services/e
 import { usePagination, useModal } from '@/hooks'
 import { formatDate, cn } from '@/utils/helpers'
 import { ROUTES, ROLES } from '@/utils/constants'
-import { ChangePasswordModal } from '@/pages/admin/profile/AdminProfilePage'
+import { AdminResetPasswordModal } from '@/pages/admin/profile/AdminProfilePage'
 import {
     Edit,
     Trash2,
@@ -44,6 +45,7 @@ import {
     Phone,
     Building,
     GraduationCap,
+    Upload,
 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:7266'
@@ -385,6 +387,7 @@ const UsersPage = () => {
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const deleteModal = useModal()
+    const bulkImportModal = useModal()
     const [viewUserId, setViewUserId] = useState(null)
     const [isViewModalOpen, setIsViewModalOpen] = useState(false)
     const [passwordModalUser, setPasswordModalUser] = useState(null)
@@ -617,6 +620,14 @@ const UsersPage = () => {
                         onExportCsv={handleExportCsv}
                         onExportExcel={handleExportExcel}
                     />
+                    <Button
+                        variant="outline"
+                        onClick={bulkImportModal.open}
+                        className="gap-2"
+                    >
+                        <Upload className="w-4 h-4" />
+                        Import
+                    </Button>
                     <Button
                         onClick={() => navigate(`${ROUTES.ADMIN_USERS}/create`)}
                         className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/25"
@@ -1080,8 +1091,8 @@ const UsersPage = () => {
                 onChangePassword={handleChangePassword}
             />
 
-            {/* Change Password Modal */}
-            <ChangePasswordModal
+            {/* Admin Reset Password Modal */}
+            <AdminResetPasswordModal
                 isOpen={isPasswordModalOpen}
                 onClose={handleClosePasswordModal}
                 userId={passwordModalUser?.Id}
@@ -1097,6 +1108,34 @@ const UsersPage = () => {
                 message={`Are you sure you want to delete "${deleteModal.data?.FullName}"? This action cannot be undone.`}
                 confirmText="Delete"
                 loading={deleteMutation.isPending}
+            />
+
+            {/* Bulk Import Modal */}
+            <BulkImportModal
+                isOpen={bulkImportModal.isOpen}
+                onClose={bulkImportModal.close}
+                title="Import Users"
+                entityName="users"
+                onDownloadTemplate={() => userService.getImportTemplate()}
+                onValidate={({ file }) => userService.validateImport(file)}
+                onExecuteImport={(data) => userService.executeImport({
+                    conflictResolution: data.conflictResolution,
+                    rows: data.rows.map(row => ({
+                        rowNumber: row.rowNumber,
+                        personalEmail: row.personalEmail || row.rollNumber,
+                        institutionalEmail: row.institutionalEmail,
+                        phoneNumber: row.phoneNumber,
+                        fullName: row.fullName || row.studentName,
+                        password: row.password,
+                        role: row.role,
+                        isActive: row.isActive !== false
+                    }))
+                })}
+                onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ['users'] })
+                    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+                    toast.success('Users imported successfully')
+                }}
             />
         </div>
     )

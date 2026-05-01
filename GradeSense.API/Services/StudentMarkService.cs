@@ -5,6 +5,7 @@ using GradeSense.API.Helpers;
 using GradeSense.API.Interfaces.Repositories;
 using GradeSense.API.Interfaces.Services;
 using GradeSense.API.Models;
+using static GradeSense.API.Helpers.ExcelHelperService;
 
 namespace GradeSense.API.Services
 {
@@ -578,6 +579,322 @@ namespace GradeSense.API.Services
             }).ToList();
 
             return await CsvHelperService.GenerateCsvAsync(templateData);
+        }
+
+        /// <summary>
+        /// Validate grade import file and return preview with conflicts
+        /// </summary>
+        public async Task<BulkGradeValidationResponse> ValidateGradeImportAsync(int assessmentItemId, Stream fileStream, string fileType)
+        {
+            var response = new BulkGradeValidationResponse();
+
+            // Validate AssessmentItem exists
+            var assessmentItem = await _assessmentItemRepository.GetByIdAsync(assessmentItemId);
+            if (assessmentItem == null)
+                throw new KeyNotFoundException("Assessment item not found");
+
+            var courseOfferingId = assessmentItem.EvaluationScheme.CourseOfferingId;
+
+            // Parse file based on type
+            List<GradeImportRowData> records;
+            List<ExcelParseError> parseErrors;
+
+            if (fileType.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) || 
+                fileType.Equals(".xls", StringComparison.OrdinalIgnoreCase))
+            {
+                (records, parseErrors) = ExcelHelperService.ParseGradeImportExcel(fileStream);
+            }
+            else
+            {
+                // CSV parsing using existing method
+                var csvResult = await CsvHelperService.ParseCsvWithErrorsAsync<StudentMarkCsvImportRequest>(fileStream);
+                records = csvResult.Records.Select((r, i) => new GradeImportRowData
+                {
+                    RowNumber = i + 2,
+                    RollNumber = r.EnrollmentNumber,
+                    MarksObtained = r.ObtainedMarks?.ToString() ?? "",
+                    IsAbsent = r.IsAbsent,
+                    Remarks = r.Remarks
+                }).ToList();
+                parseErrors = csvResult.Errors.Select(e => new ExcelParseError
+                {
+                    RowNumber = e.RowNumber,
+                    RawData = e.RawData,
+                    ErrorMessage = e.ErrorMessage
+                }).ToList();
+            }
+
+            response.TotalRows = records.Count + parseErrors.Count;
+
+            // Add parse errors
+            foreach (var error in parseErrors)
+            {
+                response.Rows.Add(new GradeValidationRow
+                {
+                    RowNumber = error.RowNumber,
+                    RollNumber = error.RawData ?? "",
+                    IsValid = false,
+                    Errors = new List<string> { error.ErrorMessage }
+                });
+                response.InvalidRows++;
+            }
+
+            // Validate each record
+            foreach (var record in records)
+            {
+                var validationRow = new GradeValidationRow
+                {
+                    RowNumber = record.RowNumber,
+                    RollNumber = record.RollNumber,
+                    IsAbsent = record.IsAbsent,
+                    Remarks = record.Remarks,
+                    IsValid = true
+                };
+
+                // Validate roll number
+                if (string.IsNullOrWhiteSpace(record.RollNumber))
+                {
+                    validationRow.Errors.Add("Roll number is required");
+                    validationRow.IsValid = false;
+                }
+                else
+                {
+                    // Find enrollment
+                    var enrollment = await _courseEnrollmentRepository
+                        .GetByStudentEnrollmentNumberAndCourseOfferingAsync(record.RollNumber, courseOfferingId);
+
+                    if (enrollment == null)
+                    {
+                        validationRow.Errors.Add($"Student '{record.RollNumber}' not enrolled in this course");
+                        validationRow.IsValid = false;
+                    }
+                    else
+                    {
+                        validationRow.StudentId = enrollment.StudentId;
+                        validationRow.EnrollmentId = enrollment.Id;
+                        validationRow.StudentName = enrollment.Student.IdNavigation.FullName;
+
+                        // Check for existing mark
+                        var existingMark = await _studentMarkRepository
+                            .GetByEnrollmentAndAssessmentAsync(enrollment.Id, assessmentItemId);
+                        if (existingMark != null)
+                        {
+                            validationRow.HasConflict = true;
+                            validationRow.ExistingMarks = existingMark.ObtainedMarks;
+                        }
+                    }
+                }
+
+                // Validate marks
+                if (!record.IsAbsent)
+                {
+                    if (string.IsNullOrWhiteSpace(record.MarksObtained))
+                    {
+                        validationRow.Errors.Add("Marks are required (or mark as absent)");
+                        validationRow.IsValid = false;
+                    }
+                    else if (decimal.TryParse(record.MarksObtained, out var marks))
+                    {
+                        validationRow.MarksObtained = marks;
+                        if (marks < 0)
+                        {
+                            validationRow.Errors.Add("Marks cannot be negative");
+                            validationRow.IsValid = false;
+                        }
+                        else if (marks > assessmentItem.MaxMarks)
+                        {
+                            validationRow.Errors.Add($"Marks ({marks}) exceed maximum ({assessmentItem.MaxMarks})");
+                            validationRow.IsValid = false;
+                        }
+                    }
+                    else
+                    {
+                        validationRow.Errors.Add("Invalid marks format");
+                        validationRow.IsValid = false;
+                    }
+                }
+
+                if (validationRow.IsValid)
+                {
+                    if (validationRow.HasConflict)
+                        response.ConflictRows++;
+                    else
+                        response.ValidRows++;
+                }
+                else
+                {
+                    response.InvalidRows++;
+                }
+
+                response.Rows.Add(validationRow);
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// Import grades with conflict resolution
+        /// </summary>
+        public async Task<BulkOperationResponse<StudentMarkResponse>> ImportGradesWithValidationAsync(BulkGradeImportRequest request)
+        {
+            var response = new BulkOperationResponse<StudentMarkResponse>();
+
+            // Validate AssessmentItem exists
+            var assessmentItem = await _assessmentItemRepository.GetByIdAsync(request.AssessmentItemId);
+            if (assessmentItem == null)
+                throw new KeyNotFoundException("Assessment item not found");
+
+            if (!assessmentItem.IsActive)
+                throw new InvalidOperationException("Assessment item is not active");
+
+            // Validate Grader exists
+            if (!await _facultyRepository.ExistsAsync(request.GraderId))
+                throw new KeyNotFoundException("Grader (Faculty) not found");
+
+            var courseOfferingId = assessmentItem.EvaluationScheme.CourseOfferingId;
+            response.TotalRecords = request.Rows.Count;
+
+            foreach (var row in request.Rows)
+            {
+                try
+                {
+                    // Find enrollment
+                    var enrollment = await _courseEnrollmentRepository
+                        .GetByStudentEnrollmentNumberAndCourseOfferingAsync(row.RollNumber, courseOfferingId);
+
+                    if (enrollment == null)
+                    {
+                        response.Errors.Add(new BulkOperationError
+                        {
+                            RowNumber = row.RowNumber,
+                            Identifier = row.RollNumber,
+                            ErrorMessage = "Student not found in this course"
+                        });
+                        continue;
+                    }
+
+                    // Check for existing mark
+                    var existingMark = await _studentMarkRepository
+                        .GetByEnrollmentAndAssessmentAsync(enrollment.Id, request.AssessmentItemId);
+
+                    decimal? obtainedMarks = null;
+                    if (!row.IsAbsent && !string.IsNullOrWhiteSpace(row.MarksObtained))
+                    {
+                        if (decimal.TryParse(row.MarksObtained, out var marks))
+                            obtainedMarks = marks;
+                    }
+
+                    if (existingMark != null)
+                    {
+                        // Handle conflict based on resolution strategy
+                        switch (request.ConflictResolution.ToLower())
+                        {
+                            case "skip":
+                                response.Errors.Add(new BulkOperationError
+                                {
+                                    RowNumber = row.RowNumber,
+                                    Identifier = row.RollNumber,
+                                    ErrorMessage = "Skipped - marks already exist"
+                                });
+                                continue;
+
+                            case "error":
+                                response.Errors.Add(new BulkOperationError
+                                {
+                                    RowNumber = row.RowNumber,
+                                    Identifier = row.RollNumber,
+                                    ErrorMessage = "Conflict - marks already exist"
+                                });
+                                continue;
+
+                            case "update":
+                                existingMark.ObtainedMarks = obtainedMarks;
+                                existingMark.IsAbsent = row.IsAbsent;
+                                existingMark.Remarks = row.Remarks;
+                                existingMark.GraderId = request.GraderId;
+                                existingMark.GradedDate = DateTime.Now;
+                                await _studentMarkRepository.UpdateAsync(existingMark);
+                                existingMark = await _studentMarkRepository.GetByIdAsync(existingMark.Id);
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        // Create new mark
+                        var newMark = new StudentMark
+                        {
+                            EnrollmentId = enrollment.Id,
+                            AssessmentItemId = request.AssessmentItemId,
+                            ObtainedMarks = obtainedMarks,
+                            IsAbsent = row.IsAbsent,
+                            Remarks = row.Remarks,
+                            GraderId = request.GraderId,
+                            GradedDate = DateTime.Now
+                        };
+                        await _studentMarkRepository.CreateAsync(newMark);
+                        existingMark = await _studentMarkRepository.GetByIdAsync(newMark.Id);
+                    }
+
+                    if (existingMark != null)
+                    {
+                        response.SuccessfulRecords.Add(new StudentMarkResponse
+                        {
+                            Id = existingMark.Id,
+                            EnrollmentId = existingMark.EnrollmentId,
+                            StudentName = existingMark.Enrollment.Student.IdNavigation.FullName,
+                            EnrollmentNumber = existingMark.Enrollment.Student.EnrollmentNumber,
+                            AssessmentItemId = existingMark.AssessmentItemId,
+                            AssessmentItemName = existingMark.AssessmentItem.Name,
+                            AssessmentMaxMarks = existingMark.AssessmentItem.MaxMarks,
+                            ObtainedMarks = existingMark.ObtainedMarks,
+                            IsAbsent = existingMark.IsAbsent,
+                            Remarks = existingMark.Remarks,
+                            GraderId = existingMark.GraderId,
+                            GraderName = existingMark.Grader.IdNavigation.FullName,
+                            GradedDate = existingMark.GradedDate,
+                            CreatedAt = existingMark.CreatedAt
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Errors.Add(new BulkOperationError
+                    {
+                        RowNumber = row.RowNumber,
+                        Identifier = row.RollNumber,
+                        ErrorMessage = ex.Message
+                    });
+                }
+            }
+
+            response.SuccessCount = response.SuccessfulRecords.Count;
+            response.ErrorCount = response.Errors.Count;
+
+            return response;
+        }
+
+        /// <summary>
+        /// Generate Excel template for grade import
+        /// </summary>
+        public async Task<byte[]> GetGradeTemplateExcelAsync(int assessmentItemId)
+        {
+            var assessmentItem = await _assessmentItemRepository.GetByIdAsync(assessmentItemId);
+            if (assessmentItem == null)
+                throw new KeyNotFoundException("Assessment item not found");
+
+            var courseOfferingId = assessmentItem.EvaluationScheme.CourseOfferingId;
+            var enrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(courseOfferingId);
+
+            var templateData = enrollments.Select(e => new
+            {
+                RollNumber = e.Student.EnrollmentNumber,
+                StudentName = e.Student.IdNavigation.FullName,
+                Marks = "",
+                IsAbsent = "",
+                Remarks = ""
+            }).ToList();
+
+            return ExcelHelperService.GenerateExcel(templateData, $"Grades - {assessmentItem.Name}");
         }
 
         #endregion

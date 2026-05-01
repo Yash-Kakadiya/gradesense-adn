@@ -1,17 +1,22 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout'
-import { Card, Badge, Select, Table, EmptyState } from '@/components/common'
+import { Card, Badge, Select, Table, EmptyState, Button } from '@/components/common'
 import { LoadingInline } from '@/components/common/Spinner'
 import { useAuth } from '@/context/AuthContext'
 import { courseEnrollmentService } from '@/services/courseEnrollmentService'
 import { attendanceService } from '@/services/attendanceService'
-import { Calendar, CheckCircle, XCircle, Clock, AlertTriangle, BookOpen } from 'lucide-react'
-import { formatDate } from '@/utils/helpers'
+import { studentExportService } from '@/services/studentExportService'
+import { AttendanceCalendar } from '@/components/students'
+import { Calendar, CheckCircle, XCircle, Clock, AlertTriangle, BookOpen, Filter, Search, Download, FileText, FileSpreadsheet, ChevronDown } from 'lucide-react'
+import { formatDate, cn } from '@/utils/helpers'
+import toast from 'react-hot-toast'
 
 const StudentAttendancePage = () => {
     const { user } = useAuth()
     const [selectedCourse, setSelectedCourse] = useState('all')
+    const [showExportMenu, setShowExportMenu] = useState(false)
+    const [exporting, setExporting] = useState(false)
 
     // Fetch student's course enrollments (user.id === student.id for students)
     const { data: enrollmentsData, isLoading: loadingEnrollments } = useQuery({
@@ -20,7 +25,17 @@ const StudentAttendancePage = () => {
         enabled: !!user?.id,
     })
 
-    // Fetch attendance records for the student
+    // Fetch ALL attendance records for the student (for summary - not filtered)
+    const { data: allAttendanceData, isLoading: loadingAllAttendance } = useQuery({
+        queryKey: ['student-attendance-all', user?.id],
+        queryFn: () => attendanceService.getAll({
+            studentId: user?.id,
+            pageSize: 500,
+        }),
+        enabled: !!user?.id,
+    })
+
+    // Fetch filtered attendance records for detailed view
     const { data: attendanceData, isLoading: loadingAttendance } = useQuery({
         queryKey: ['student-attendance', user?.id, selectedCourse],
         queryFn: () => attendanceService.getAll({
@@ -33,6 +48,7 @@ const StudentAttendancePage = () => {
 
     // Extract data from API responses (PascalCase)
     const enrollments = enrollmentsData?.Data?.Data || enrollmentsData?.Data || []
+    const allAttendanceRecords = allAttendanceData?.Data?.Data || []
     const attendanceRecords = attendanceData?.Data?.Data || []
 
     // Build course options
@@ -44,11 +60,11 @@ const StudentAttendancePage = () => {
         })),
     ]
 
-    // Calculate attendance summary per course
+    // Calculate attendance summary per course (using ALL attendance records)
     const attendanceSummary = useMemo(() => {
         return enrollments.map(enrollment => {
             const courseId = enrollment.CourseOfferingId || enrollment.Id
-            const courseAttendance = attendanceRecords.filter(r => r.CourseOfferingId === courseId)
+            const courseAttendance = allAttendanceRecords.filter(r => r.CourseOfferingId === courseId)
             const totalClasses = courseAttendance.length
             const attended = courseAttendance.filter(r =>
                 r.Status?.toLowerCase() === 'present' || r.Status?.toLowerCase() === 'late'
@@ -64,7 +80,7 @@ const StudentAttendancePage = () => {
                 Percentage: percentage,
             }
         })
-    }, [enrollments, attendanceRecords])
+    }, [enrollments, allAttendanceRecords])
 
     // Overall statistics
     const overallStats = useMemo(() => {
@@ -74,10 +90,8 @@ const StudentAttendancePage = () => {
         return { totalClasses, attended, percentage }
     }, [attendanceSummary])
 
-    // Filter attendance records
-    const filteredAttendance = selectedCourse === 'all'
-        ? attendanceRecords
-        : attendanceRecords.filter(r => r.CourseOfferingId?.toString() === selectedCourse)
+    // Use filtered attendance for detailed view
+    const filteredAttendance = attendanceRecords
 
     const getAttendanceColor = (percentage) => {
         if (percentage >= 90) return 'text-green-600'
@@ -169,6 +183,54 @@ const StudentAttendancePage = () => {
         },
     ]
 
+    // Export functions
+    const handleExportAttendance = async (format) => {
+        setExporting(true)
+        setShowExportMenu(false)
+
+        try {
+            const filters = selectedCourse !== 'all' ? { courseOfferingId: parseInt(selectedCourse) } : {}
+            const response = format === 'csv'
+                ? await studentExportService.exportAttendanceToCsv(filters)
+                : await studentExportService.exportAttendanceToExcel(filters)
+
+            const filename = studentExportService.getFilenameFromResponse(
+                response,
+                `attendance.${format === 'csv' ? 'csv' : 'xlsx'}`
+            )
+
+            studentExportService.downloadBlobAsFile(response.data, filename)
+            toast.success(`Attendance exported to ${format.toUpperCase()} successfully`)
+        } catch (error) {
+            console.error('Export error:', error)
+            toast.error(`Failed to export attendance: ${error.message || 'Unknown error'}`)
+        } finally {
+            setExporting(false)
+        }
+    }
+
+    const handleExportAcademicReport = async () => {
+        setExporting(true)
+        setShowExportMenu(false)
+
+        try {
+            const response = await studentExportService.exportAcademicReportToExcel({})
+
+            const filename = studentExportService.getFilenameFromResponse(
+                response,
+                `academic_report.xlsx`
+            )
+
+            studentExportService.downloadBlobAsFile(response.data, filename)
+            toast.success('Academic report exported successfully')
+        } catch (error) {
+            console.error('Export error:', error)
+            toast.error(`Failed to export academic report: ${error.message || 'Unknown error'}`)
+        } finally {
+            setExporting(false)
+        }
+    }
+
     if (loadingEnrollments) {
         return <LoadingInline message="Loading attendance..." />
     }
@@ -257,7 +319,7 @@ const StudentAttendancePage = () => {
                                     Your attendance in the following courses is below 75%:{' '}
                                     {attendanceSummary
                                         .filter((c) => c.Percentage < 75 && c.TotalClasses > 0)
-                                        .map((c) => c.Code)
+                                        .map((c) => c.Name)
                                         .join(', ')}
                                 </p>
                             </div>
@@ -265,6 +327,9 @@ const StudentAttendancePage = () => {
                     </Card.Body>
                 </Card>
             )}
+
+            {/* Attendance Calendar */}
+            <AttendanceCalendar studentId={user?.id} />
 
             {/* Attendance Summary by Course */}
             <Card className="border-0 shadow-sm overflow-hidden">
@@ -274,14 +339,20 @@ const StudentAttendancePage = () => {
                         Attendance Summary by Course
                     </Card.Title>
                 </Card.Header>
-                {attendanceSummary.length === 0 ? (
-                    <Card.Body>
-                        <EmptyState
-                            icon={BookOpen}
-                            title="No courses found"
-                            description="You are not enrolled in any courses"
-                        />
-                    </Card.Body>
+                {(loadingAllAttendance || attendanceSummary.length === 0) ? (
+                    loadingAllAttendance ? (
+                        <Card.Body>
+                            <LoadingInline message="Loading summary..." />
+                        </Card.Body>
+                    ) : (
+                        <Card.Body>
+                            <EmptyState
+                                icon={BookOpen}
+                                title="No courses found"
+                                description="You are not enrolled in any courses"
+                            />
+                        </Card.Body>
+                    )
                 ) : (
                     <Table columns={summaryColumns} data={attendanceSummary} />
                 )}
@@ -289,20 +360,83 @@ const StudentAttendancePage = () => {
 
             {/* Detailed Attendance */}
             <Card className="border-0 shadow-sm overflow-hidden">
-                <Card.Header className="bg-gradient-to-r from-purple-50 to-pink-50 border-b">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <Card.Title className="flex items-center gap-2">
-                            <Calendar className="w-5 h-5 text-purple-600" />
-                            Detailed Attendance
-                        </Card.Title>
-                        <Select
-                            options={courseOptions}
-                            value={selectedCourse}
-                            onChange={(e) => setSelectedCourse(e.target.value)}
-                            className="w-56"
-                        />
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-white/20 backdrop-blur rounded-xl">
+                                <Calendar className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Detailed Attendance</h3>
+                                <p className="text-white/70 text-sm">View your attendance records</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/70" />
+                                <select
+                                    value={selectedCourse}
+                                    onChange={(e) => setSelectedCourse(e.target.value)}
+                                    className="w-full sm:w-64 pl-10 pr-4 py-2.5 bg-white/20 backdrop-blur border border-white/30 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 appearance-none cursor-pointer"
+                                >
+                                    {courseOptions.map((option) => (
+                                        <option key={option.value} value={option.value} className="text-gray-900">
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            {/* Export Button */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowExportMenu(!showExportMenu)}
+                                    disabled={exporting}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-white/20 backdrop-blur border border-white/30 rounded-xl text-white hover:bg-white/30 transition-colors disabled:opacity-50"
+                                >
+                                    {exporting ? (
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                        <Download className="w-4 h-4" />
+                                    )}
+                                    Export
+                                    <ChevronDown className="w-4 h-4" />
+                                </button>
+                                {showExportMenu && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                                        <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                            Attendance
+                                        </div>
+                                        <button
+                                            onClick={() => handleExportAttendance('csv')}
+                                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                        >
+                                            <FileText className="w-4 h-4 text-green-600" />
+                                            Download CSV
+                                        </button>
+                                        <button
+                                            onClick={() => handleExportAttendance('excel')}
+                                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                                            Download Excel (with Summary)
+                                        </button>
+                                        <div className="border-t border-gray-100 my-2" />
+                                        <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                            Full Report
+                                        </div>
+                                        <button
+                                            onClick={handleExportAcademicReport}
+                                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4 text-purple-600" />
+                                            Academic Report (Excel)
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </Card.Header>
+                </div>
                 {loadingAttendance ? (
                     <Card.Body>
                         <LoadingInline message="Loading attendance records..." />

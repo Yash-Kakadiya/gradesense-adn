@@ -1,10 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, Badge, Button, EmptyState, Pagination, Modal } from '@/components/common'
 import { useAuth } from '@/context/AuthContext'
 import { useDebounce, useModal } from '@/hooks'
 import { facultyAssignmentService } from '@/services/facultyAssignmentService'
+import { courseEnrollmentService } from '@/services/courseEnrollmentService'
+import { departmentService } from '@/services/departmentService'
 import { predictionService } from '@/services/predictionService'
+import { getErrorMessage } from '@/utils/errorHandler'
+import StudentDetailModal from '@/components/students/StudentDetailModal'
 import { cn } from '@/utils/helpers'
 import toast from 'react-hot-toast'
 import {
@@ -61,27 +65,151 @@ const RiskLevelBadge = ({ level, confidence }) => {
 }
 
 // At-Risk Student Card
-const AtRiskStudentCard = ({ student, onViewDetails, onReview }) => (
-    <Card className="group hover:shadow-lg transition-all duration-300 overflow-hidden">
-        {/* Risk indicator bar */}
-        <div className={cn(
-            "h-1.5",
-            student.RiskLevel?.toLowerCase() === 'high' ? "bg-gradient-to-r from-red-400 to-rose-500" :
-                student.RiskLevel?.toLowerCase() === 'medium' ? "bg-gradient-to-r from-orange-400 to-amber-500" :
-                    "bg-gradient-to-r from-green-400 to-emerald-500"
-        )} />
+const AtRiskStudentCard = ({ student, onViewDetails, onReview, onCardClick }) => {
+    const handleButtonClick = (e, handler) => {
+        e.stopPropagation()
+        handler(student)
+    }
 
-        <Card.Body className="p-4">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 mb-3">
+    return (
+        <Card
+            className="group hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer"
+            onClick={() => onCardClick && onCardClick(student)}
+        >
+            {/* Risk indicator bar */}
+            <div className={cn(
+                "h-1.5",
+                student.RiskLevel?.toLowerCase() === 'high' ? "bg-gradient-to-r from-red-400 to-rose-500" :
+                    student.RiskLevel?.toLowerCase() === 'medium' ? "bg-gradient-to-r from-orange-400 to-amber-500" :
+                        "bg-gradient-to-r from-green-400 to-emerald-500"
+            )} />
+
+            <Card.Body className="p-4">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className={cn(
+                            "w-11 h-11 rounded-full flex items-center justify-center",
+                            student.RiskLevel?.toLowerCase() === 'high' ? "bg-red-100" :
+                                student.RiskLevel?.toLowerCase() === 'medium' ? "bg-orange-100" : "bg-green-100"
+                        )}>
+                            <span className={cn(
+                                "font-semibold",
+                                student.RiskLevel?.toLowerCase() === 'high' ? "text-red-600" :
+                                    student.RiskLevel?.toLowerCase() === 'medium' ? "text-orange-600" : "text-green-600"
+                            )}>
+                                {student.StudentName?.charAt(0) || 'S'}
+                            </span>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-gray-900">{student.StudentName}</h3>
+                            <p className="text-xs text-gray-500 font-mono">{student.RollNumber}</p>
+                        </div>
+                    </div>
+                    <RiskLevelBadge level={student.RiskLevel} confidence={student.Confidence} />
+                </div>
+
+                {/* Course Info */}
+                <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                    <BookOpen className="w-4 h-4 text-gray-400" />
+                    <span className="truncate">{student.SubjectName || 'N/A'}</span>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="text-center p-2 bg-gray-50 rounded-lg">
+                        <p className={cn(
+                            "text-lg font-bold",
+                            (student.CurrentScore || 0) >= 50 ? "text-gray-900" : "text-red-600"
+                        )}>
+                            {student.CurrentScore?.toFixed(1) || 0}%
+                        </p>
+                        <p className="text-xs text-gray-500">Score</p>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded-lg">
+                        <p className={cn(
+                            "text-lg font-bold",
+                            (student.AttendancePercentage || 0) >= 75 ? "text-gray-900" : "text-red-600"
+                        )}>
+                            {student.AttendancePercentage?.toFixed(0) || 0}%
+                        </p>
+                        <p className="text-xs text-gray-500">Attendance</p>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded-lg">
+                        <p className={cn(
+                            "text-lg font-bold",
+                            (student.PredictedScore || 0) >= 50 ? "text-green-600" : "text-red-600"
+                        )}>
+                            {student.PredictedScore?.toFixed(1) || 0}%
+                        </p>
+                        <p className="text-xs text-gray-500">Predicted</p>
+                    </div>
+                </div>
+
+                {/* Risk Factors */}
+                {student.RiskFactors && student.RiskFactors.length > 0 && (
+                    <div className="mb-3">
+                        <p className="text-xs text-gray-500 mb-1">Risk Factors:</p>
+                        <div className="flex flex-wrap gap-1">
+                            {student.RiskFactors.slice(0, 3).map((factor, idx) => (
+                                <span key={idx} className="text-xs px-2 py-0.5 bg-red-50 text-red-700 rounded-full">
+                                    {factor}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={(e) => handleButtonClick(e, onViewDetails)}
+                    >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1"
+                        onClick={(e) => handleButtonClick(e, onReview)}
+                    >
+                        <Edit3 className="w-4 h-4 mr-2" />
+                        Review
+                    </Button>
+                </div>
+            </Card.Body>
+        </Card>
+    )
+}
+
+// At-Risk Table Row
+const AtRiskTableRow = ({ student, onViewDetails, onReview, onRowClick, index }) => {
+    const handleButtonClick = (e, handler) => {
+        e.stopPropagation()
+        handler(student)
+    }
+
+    return (
+        <tr
+            className={cn(
+                "hover:bg-gray-50 transition-colors cursor-pointer",
+                index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+            )}
+            onClick={() => onRowClick && onRowClick(student)}
+        >
+            <td className="px-4 py-3">
                 <div className="flex items-center gap-3">
                     <div className={cn(
-                        "w-11 h-11 rounded-full flex items-center justify-center",
+                        "w-9 h-9 rounded-full flex items-center justify-center",
                         student.RiskLevel?.toLowerCase() === 'high' ? "bg-red-100" :
                             student.RiskLevel?.toLowerCase() === 'medium' ? "bg-orange-100" : "bg-green-100"
                     )}>
                         <span className={cn(
-                            "font-semibold",
+                            "font-medium text-sm",
                             student.RiskLevel?.toLowerCase() === 'high' ? "text-red-600" :
                                 student.RiskLevel?.toLowerCase() === 'medium' ? "text-orange-600" : "text-green-600"
                         )}>
@@ -89,183 +217,81 @@ const AtRiskStudentCard = ({ student, onViewDetails, onReview }) => (
                         </span>
                     </div>
                     <div>
-                        <h3 className="font-semibold text-gray-900">{student.StudentName}</h3>
+                        <p className="font-medium text-gray-900">{student.StudentName}</p>
                         <p className="text-xs text-gray-500 font-mono">{student.RollNumber}</p>
                     </div>
                 </div>
-                <RiskLevelBadge level={student.RiskLevel} confidence={student.Confidence} />
-            </div>
-
-            {/* Course Info */}
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                <BookOpen className="w-4 h-4 text-gray-400" />
-                <span className="truncate">{student.SubjectName || 'N/A'}</span>
-            </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-2 mb-3">
-                <div className="text-center p-2 bg-gray-50 rounded-lg">
-                    <p className={cn(
-                        "text-lg font-bold",
-                        (student.CurrentScore || 0) >= 50 ? "text-gray-900" : "text-red-600"
-                    )}>
-                        {student.CurrentScore?.toFixed(1) || 0}%
-                    </p>
-                    <p className="text-xs text-gray-500">Score</p>
-                </div>
-                <div className="text-center p-2 bg-gray-50 rounded-lg">
-                    <p className={cn(
-                        "text-lg font-bold",
-                        (student.AttendancePercentage || 0) >= 75 ? "text-gray-900" : "text-red-600"
-                    )}>
-                        {student.AttendancePercentage?.toFixed(0) || 0}%
-                    </p>
-                    <p className="text-xs text-gray-500">Attendance</p>
-                </div>
-                <div className="text-center p-2 bg-gray-50 rounded-lg">
-                    <p className={cn(
-                        "text-lg font-bold",
-                        (student.PredictedScore || 0) >= 50 ? "text-green-600" : "text-red-600"
-                    )}>
-                        {student.PredictedScore?.toFixed(1) || 0}%
-                    </p>
-                    <p className="text-xs text-gray-500">Predicted</p>
-                </div>
-            </div>
-
-            {/* Risk Factors */}
-            {student.RiskFactors && student.RiskFactors.length > 0 && (
-                <div className="mb-3">
-                    <p className="text-xs text-gray-500 mb-1">Risk Factors:</p>
-                    <div className="flex flex-wrap gap-1">
-                        {student.RiskFactors.slice(0, 3).map((factor, idx) => (
-                            <span key={idx} className="text-xs px-2 py-0.5 bg-red-50 text-red-700 rounded-full">
-                                {factor}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-2">
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => onViewDetails(student)}
-                >
-                    <Eye className="w-4 h-4 mr-2" />
-                    View
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => onReview(student)}
-                >
-                    <Edit3 className="w-4 h-4 mr-2" />
-                    Review
-                </Button>
-            </div>
-        </Card.Body>
-    </Card>
-)
-
-// At-Risk Table Row
-const AtRiskTableRow = ({ student, onViewDetails, onReview, index }) => (
-    <tr className={cn(
-        "hover:bg-gray-50 transition-colors",
-        index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-    )}>
-        <td className="px-4 py-3">
-            <div className="flex items-center gap-3">
-                <div className={cn(
-                    "w-9 h-9 rounded-full flex items-center justify-center",
-                    student.RiskLevel?.toLowerCase() === 'high' ? "bg-red-100" :
-                        student.RiskLevel?.toLowerCase() === 'medium' ? "bg-orange-100" : "bg-green-100"
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-600">
+                <span className="truncate block max-w-xs">{student.SubjectName || 'N/A'}</span>
+            </td>
+            <td className="px-4 py-3 text-center">
+                <span className={cn(
+                    "font-semibold",
+                    (student.CurrentScore || 0) >= 50 ? "text-gray-900" : "text-red-600"
                 )}>
-                    <span className={cn(
-                        "font-medium text-sm",
-                        student.RiskLevel?.toLowerCase() === 'high' ? "text-red-600" :
-                            student.RiskLevel?.toLowerCase() === 'medium' ? "text-orange-600" : "text-green-600"
-                    )}>
-                        {student.StudentName?.charAt(0) || 'S'}
-                    </span>
+                    {student.CurrentScore?.toFixed(1) || 0}%
+                </span>
+            </td>
+            <td className="px-4 py-3 text-center">
+                <span className={cn(
+                    "font-semibold",
+                    (student.AttendancePercentage || 0) >= 75 ? "text-gray-900" : "text-red-600"
+                )}>
+                    {student.AttendancePercentage?.toFixed(0) || 0}%
+                </span>
+            </td>
+            <td className="px-4 py-3 text-center">
+                <span className={cn(
+                    "font-semibold",
+                    (student.PredictedScore || 0) >= 50 ? "text-green-600" : "text-red-600"
+                )}>
+                    {student.PredictedScore?.toFixed(1) || 0}%
+                </span>
+            </td>
+            <td className="px-4 py-3 text-center">
+                <RiskLevelBadge level={student.RiskLevel} />
+            </td>
+            <td className="px-4 py-3 text-right">
+                <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={(e) => handleButtonClick(e, onViewDetails)} title="View Details">
+                        <Eye className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => handleButtonClick(e, onReview)} title="Review Performance">
+                        <Edit3 className="w-4 h-4" />
+                    </Button>
                 </div>
-                <div>
-                    <p className="font-medium text-gray-900">{student.StudentName}</p>
-                    <p className="text-xs text-gray-500 font-mono">{student.RollNumber}</p>
-                </div>
-            </div>
-        </td>
-        <td className="px-4 py-3 text-sm text-gray-600">
-            <span className="truncate block max-w-xs">{student.SubjectName || 'N/A'}</span>
-        </td>
-        <td className="px-4 py-3 text-center">
-            <span className={cn(
-                "font-semibold",
-                (student.CurrentScore || 0) >= 50 ? "text-gray-900" : "text-red-600"
-            )}>
-                {student.CurrentScore?.toFixed(1) || 0}%
-            </span>
-        </td>
-        <td className="px-4 py-3 text-center">
-            <span className={cn(
-                "font-semibold",
-                (student.AttendancePercentage || 0) >= 75 ? "text-gray-900" : "text-red-600"
-            )}>
-                {student.AttendancePercentage?.toFixed(0) || 0}%
-            </span>
-        </td>
-        <td className="px-4 py-3 text-center">
-            <span className={cn(
-                "font-semibold",
-                (student.PredictedScore || 0) >= 50 ? "text-green-600" : "text-red-600"
-            )}>
-                {student.PredictedScore?.toFixed(1) || 0}%
-            </span>
-        </td>
-        <td className="px-4 py-3 text-center">
-            <RiskLevelBadge level={student.RiskLevel} />
-        </td>
-        <td className="px-4 py-3 text-right">
-            <div className="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="sm" onClick={() => onViewDetails(student)} title="View Details">
-                    <Eye className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => onReview(student)} title="Review Performance">
-                    <Edit3 className="w-4 h-4" />
-                </Button>
-            </div>
-        </td>
-    </tr>
-)
+            </td>
+        </tr>
+    )
+}
 
-// Performance Review Modal
-const PerformanceReviewModal = ({ isOpen, onClose, student, onSave, isSaving }) => {
-    const [reviewData, setReviewData] = useState({
-        predictedCategory: '',
-        riskScore: '',
-        reviewNotes: '',
-    })
+// Helper function to map risk level to category
+const mapRiskLevelToCategory = (riskLevel) => {
+    if (!riskLevel) return 'High'
+    const normalized = String(riskLevel).toLowerCase().trim()
+    if (normalized === 'high' || normalized === 'at-risk') return 'High'
+    if (normalized === 'medium' || normalized === 'needs-attention') return 'Medium'
+    if (normalized === 'low' || normalized === 'safe') return 'Low'
+    return 'High'
+}
 
-    // Initialize form when student changes
-    useState(() => {
-        if (student) {
-            setReviewData({
-                predictedCategory: student.RiskLevel || 'Safe',
-                riskScore: student.RiskScore?.toString() || '',
-                reviewNotes: student.ReviewNotes || '',
-            })
-        }
-    }, [student])
+// Performance Review Modal - only rendered when open with a student
+const PerformanceReviewModal = ({ onClose, student, onSave, isSaving }) => {
+    // Derive initial values directly from student prop
+    const initialCategory = mapRiskLevelToCategory(student.RiskLevel)
+
+    // Simple state - no lazy initializer, no useEffect
+    const [predictedCategory, setPredictedCategory] = useState(initialCategory)
+    const [riskScoreInput, setRiskScoreInput] = useState(student.RiskScore?.toString() || '')
+    const [reviewNotesInput, setReviewNotesInput] = useState(student.ReviewNotes || '')
 
     const handleSubmit = (e) => {
         e.preventDefault()
         onSave({
-            ...reviewData,
-            riskScore: reviewData.riskScore ? parseFloat(reviewData.riskScore) : undefined,
+            predictedCategory,
+            riskScore: riskScoreInput ? parseFloat(riskScoreInput) : undefined,
+            reviewNotes: reviewNotesInput,
         })
     }
 
@@ -273,13 +299,10 @@ const PerformanceReviewModal = ({ isOpen, onClose, student, onSave, isSaving }) 
         { value: 'High', label: 'High Risk', color: 'red' },
         { value: 'Medium', label: 'Medium Risk', color: 'orange' },
         { value: 'Low', label: 'Low Risk', color: 'green' },
-        { value: 'Safe', label: 'Safe', color: 'emerald' },
     ]
 
-    if (!student) return null
-
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Review Student Performance">
+        <Modal isOpen={true} onClose={onClose} title="Review Student Performance">
             <form onSubmit={handleSubmit}>
                 {/* Student Info */}
                 <div className="mb-6 p-4 bg-gray-50 rounded-xl">
@@ -344,10 +367,10 @@ const PerformanceReviewModal = ({ isOpen, onClose, student, onSave, isSaving }) 
                             <button
                                 key={option.value}
                                 type="button"
-                                onClick={() => setReviewData(prev => ({ ...prev, predictedCategory: option.value }))}
+                                onClick={() => setPredictedCategory(option.value)}
                                 className={cn(
                                     "px-4 py-3 rounded-lg border-2 transition-all text-sm font-medium",
-                                    reviewData.predictedCategory === option.value
+                                    predictedCategory === option.value
                                         ? option.color === 'red' ? "border-red-500 bg-red-50 text-red-700" :
                                             option.color === 'orange' ? "border-orange-500 bg-orange-50 text-orange-700" :
                                                 option.color === 'green' ? "border-green-500 bg-green-50 text-green-700" :
@@ -367,8 +390,8 @@ const PerformanceReviewModal = ({ isOpen, onClose, student, onSave, isSaving }) 
                         Review Notes
                     </label>
                     <textarea
-                        value={reviewData.reviewNotes}
-                        onChange={(e) => setReviewData(prev => ({ ...prev, reviewNotes: e.target.value }))}
+                        value={reviewNotesInput}
+                        onChange={(e) => setReviewNotesInput(e.target.value)}
                         placeholder="Add notes about this student's performance, interventions planned, or observations..."
                         rows={4}
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
@@ -404,21 +427,41 @@ const FacultyAtRiskPage = () => {
     const queryClient = useQueryClient()
     const [searchTerm, setSearchTerm] = useState('')
     const [courseFilter, setCourseFilter] = useState('')
+    const [departmentFilter, setDepartmentFilter] = useState('')
     const [riskFilter, setRiskFilter] = useState('')
     const [viewMode, setViewMode] = useState('grid')
     const [currentPage, setCurrentPage] = useState(1)
-    const pageSize = 12
+    const [pageSize, setPageSize] = useState(12)
     const debouncedSearch = useDebounce(searchTerm, 300)
 
     // Review modal state
     const [selectedStudent, setSelectedStudent] = useState(null)
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false)
 
+    // Student detail modal state
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+    const [viewStudentId, setViewStudentId] = useState(null)
+
+    // Fetch departments for filter
+    const { data: departmentsData } = useQuery({
+        queryKey: ['departments-for-atrisk-filter'],
+        queryFn: () => departmentService.getAll({ pageSize: 100 }),
+    })
+
+    const departments = useMemo(() =>
+        departmentsData?.Data?.Data || departmentsData?.Data || [],
+        [departmentsData])
+
+    const departmentOptions = useMemo(() => [
+        { value: '', label: 'All Departments' },
+        ...departments.map(d => ({ value: d.Id?.toString(), label: d.Name }))
+    ], [departments])
+
     // Fetch faculty's course assignments
     const { data: assignmentsData } = useQuery({
-        queryKey: ['faculty-assignments', user?.id],
-        queryFn: () => facultyAssignmentService.getByFaculty(user?.id),
-        enabled: !!user?.id,
+        queryKey: ['faculty-assignments', user?.facultyId],
+        queryFn: () => facultyAssignmentService.getByFaculty(user?.facultyId),
+        enabled: !!user?.facultyId,
     })
 
     // Get course IDs
@@ -436,40 +479,119 @@ const FacultyAtRiskPage = () => {
         }))
     }, [assignmentsData])
 
-    // Fetch at-risk predictions
-    const { data: predictionsData, isLoading, refetch } = useQuery({
-        queryKey: ['faculty-at-risk', courseIds, currentPage, pageSize],
+    // Risk thresholds
+    const getRiskLevel = (score) => {
+        if (score < 40) return 'high'
+        if (score < 55) return 'medium'
+        return 'low'
+    }
+
+    // Fetch enrollments for faculty's courses
+    const { data: enrollmentsData, isLoading, refetch } = useQuery({
+        queryKey: ['faculty-at-risk-enrollments', courseIds],
         queryFn: async () => {
-            if (courseIds.length === 0) return { Data: [], TotalCount: 0 }
-            return predictionService.getAll({
+            if (courseIds.length === 0) return { Data: [] }
+            return courseEnrollmentService.getAll({
                 courseOfferingIds: courseFilter || courseIds.join(','),
-                riskLevel: riskFilter || undefined,
-                pageNumber: currentPage,
-                pageSize,
+                pageSize: 1000, // Get all enrollments
             })
         },
         enabled: courseIds.length > 0,
     })
 
-    // Process predictions data
-    const atRiskStudents = useMemo(() => {
+    // Fetch predictions for faculty's courses
+    const { data: predictionsData, refetch: refetchPredictions } = useQuery({
+        queryKey: ['faculty-predictions', courseIds],
+        queryFn: async () => {
+            if (courseIds.length === 0) return { Data: { Data: [] } }
+            // Fetch active predictions
+            const result = await predictionService.getAll({
+                isActive: true,
+                pageSize: 1000,
+            })
+            return result || { Data: { Data: [] } }
+        },
+        enabled: courseIds.length > 0,
+        staleTime: 0, // Always refetch when invalidated
+    })
+
+    // Mutation for saving faculty prediction override
+    const savePredictionMutation = useMutation({
+        mutationFn: (data) => predictionService.create(data),
+        onSuccess: async () => {
+            // Close modal first for better UX
+            setIsReviewModalOpen(false)
+            setSelectedStudent(null)
+            toast.success('Student risk assessment saved successfully')
+            // Force invalidate and refetch all prediction-related queries
+            await queryClient.invalidateQueries({ queryKey: ['faculty-predictions'] })
+            // Also refetch enrollments to ensure fresh data
+            await queryClient.invalidateQueries({ queryKey: ['faculty-at-risk-enrollments'] })
+        },
+        onError: (error) => {
+            toast.error(getErrorMessage(error))
+        },
+    })
+
+    // Create a map of enrollment ID to prediction for quick lookup
+    const predictionMap = useMemo(() => {
         const predictions = predictionsData?.Data?.Data || predictionsData?.Data || []
-        return predictions.map(p => ({
-            Id: p.Id,
-            StudentId: p.StudentId,
-            StudentName: p.StudentName || p.Student?.FullName,
-            RollNumber: p.RollNumber || p.Student?.RollNumber,
-            Email: p.StudentEmail || p.Student?.Email,
-            SubjectName: p.SubjectName || p.CourseOffering?.SubjectName,
-            CourseOfferingId: p.CourseOfferingId,
-            CurrentScore: p.CurrentScore || p.AverageScore,
-            AttendancePercentage: p.AttendancePercentage,
-            PredictedScore: p.PredictedScore,
-            RiskLevel: p.RiskLevel || 'Low', // Default to Low (Good) since ML not implemented
-            Confidence: p.Confidence,
-            RiskFactors: p.RiskFactors || [],
-        }))
+        const map = {}
+        predictions.forEach(p => {
+            // Keep only the latest prediction per enrollment (sorted by GeneratedAt desc)
+            if (!map[p.CourseEnrollmentId] ||
+                new Date(p.GeneratedAt) > new Date(map[p.CourseEnrollmentId].GeneratedAt)) {
+                map[p.CourseEnrollmentId] = p
+            }
+        })
+        return map
     }, [predictionsData])
+
+    // Map backend prediction category to display risk level
+    const mapCategoryToRiskLevel = (category) => {
+        if (!category) return null
+        const normalizedCategory = category.toLowerCase()
+        if (normalizedCategory === 'at-risk') return 'high'
+        if (normalizedCategory === 'needs-attention') return 'medium'
+        if (normalizedCategory === 'high-achiever' || normalizedCategory === 'safe') return 'low'
+        return 'low'
+    }
+
+    // Process enrollments data and calculate risk based on AverageScore
+    // Merge with prediction data if available (faculty overrides)
+    const atRiskStudents = useMemo(() => {
+        const enrollments = enrollmentsData?.Data?.Data || enrollmentsData?.Data || []
+        // Filter only students with scores below 55% (at risk threshold)
+        return enrollments
+            .filter(e => (e.AverageScore || 0) < 55)
+            .map(e => {
+                const prediction = predictionMap[e.Id]
+                const calculatedRisk = getRiskLevel(e.AverageScore || 0)
+                // Use prediction data if available, otherwise use calculated values
+                return {
+                    Id: e.Id,
+                    StudentId: e.StudentId,
+                    StudentName: e.StudentName,
+                    RollNumber: e.RollNumber || e.EnrollmentNumber,
+                    Email: e.PersonalEmail,
+                    SubjectName: e.SubjectName,
+                    CourseOfferingId: e.CourseOfferingId,
+                    DepartmentId: e.DepartmentId,
+                    DepartmentName: e.DepartmentName,
+                    CurrentScore: e.AverageScore || 0,
+                    AttendancePercentage: e.AttendancePercentage,
+                    PredictedScore: prediction?.PredictedMarks || null,
+                    // Use prediction risk level if exists, otherwise calculated
+                    RiskLevel: prediction ? mapCategoryToRiskLevel(prediction.PredictedCategory) : calculatedRisk,
+                    RiskScore: prediction?.RiskScore || null,
+                    Confidence: prediction?.ConfidenceScore || null,
+                    ReviewNotes: prediction?.RecommendedActions || '',
+                    HasPrediction: !!prediction,
+                    PredictionId: prediction?.Id || null,
+                    RiskFactors: [],
+                }
+            })
+    }, [enrollmentsData, predictionMap])
 
     // Filter students
     const filteredStudents = useMemo(() => {
@@ -481,15 +603,24 @@ const FacultyAtRiskPage = () => {
             const matchesCourse = !courseFilter ||
                 student.CourseOfferingId?.toString() === courseFilter
 
+            const matchesDepartment = !departmentFilter ||
+                student.DepartmentId?.toString() === departmentFilter
+
             const matchesRisk = !riskFilter ||
                 student.RiskLevel?.toLowerCase() === riskFilter
 
-            return matchesSearch && matchesCourse && matchesRisk
+            return matchesSearch && matchesCourse && matchesDepartment && matchesRisk
         })
-    }, [atRiskStudents, debouncedSearch, courseFilter, riskFilter])
+    }, [atRiskStudents, debouncedSearch, courseFilter, departmentFilter, riskFilter])
 
-    const totalCount = predictionsData?.Data?.TotalCount || filteredStudents.length
-    const totalPages = Math.ceil(totalCount / pageSize)
+    const totalCount = filteredStudents.length
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize) || 1)
+
+    // Paginated students
+    const paginatedStudents = useMemo(() => {
+        const start = (currentPage - 1) * pageSize
+        return filteredStudents.slice(start, start + pageSize)
+    }, [filteredStudents, currentPage, pageSize])
 
     // Stats
     const stats = useMemo(() => ({
@@ -499,25 +630,21 @@ const FacultyAtRiskPage = () => {
         lowRisk: atRiskStudents.filter(s => s.RiskLevel?.toLowerCase() === 'low').length,
     }), [atRiskStudents])
 
-    // Mutation for reviewing predictions
-    const reviewMutation = useMutation({
-        mutationFn: ({ predictionId, reviewData }) =>
-            predictionService.reviewPrediction(predictionId, reviewData, user?.id),
-        onSuccess: () => {
-            toast.success('Performance review saved successfully')
-            queryClient.invalidateQueries(['faculty-at-risk'])
-            setIsReviewModalOpen(false)
-            setSelectedStudent(null)
-        },
-        onError: (error) => {
-            toast.error(error.message || 'Failed to save review')
-        },
-    })
-
     const handleViewDetails = (student) => {
+        // Open StudentDetailModal with full student details
+        setViewStudentId(student.StudentId)
+        setIsViewModalOpen(true)
+    }
+
+    const handleRowClick = (student) => {
+        // Row click shows performance review modal
         setSelectedStudent(student)
-        // For now, open review modal for viewing (since there's no separate view modal)
         setIsReviewModalOpen(true)
+    }
+
+    const handleCloseViewModal = () => {
+        setIsViewModalOpen(false)
+        setViewStudentId(null)
     }
 
     const handleReviewStudent = (student) => {
@@ -527,16 +654,30 @@ const FacultyAtRiskPage = () => {
 
     const handleSaveReview = (reviewData) => {
         if (!selectedStudent?.Id) {
-            toast.error('No prediction selected')
+            toast.error('Unable to save review - missing enrollment ID')
             return
         }
-        reviewMutation.mutate({
-            predictionId: selectedStudent.Id,
-            reviewData: {
-                PredictedCategory: reviewData.predictedCategory,
-                RiskScore: reviewData.riskScore,
-                ReviewNotes: reviewData.reviewNotes,
-            },
+
+        // Map frontend category to backend format and risk score
+        const categoryMap = {
+            'High': { category: 'At-Risk', score: 0.85 },
+            'Medium': { category: 'Needs-Attention', score: 0.55 },
+            'Low': { category: 'Safe', score: 0.25 },
+        }
+        const mapping = categoryMap[reviewData.predictedCategory] || categoryMap['High']
+
+        savePredictionMutation.mutate({
+            CourseEnrollmentId: selectedStudent.Id,
+            PredictedCategory: mapping.category,
+            RiskScore: reviewData.riskScore !== undefined && reviewData.riskScore !== ''
+                ? parseFloat(reviewData.riskScore)
+                : mapping.score,
+            ConfidenceScore: 1.0, // Faculty manual override = 100% confidence
+            ModelVersion: 'Faculty-Manual-Override',
+            ModelAccuracy: 1.0,
+            RecommendedActions: reviewData.reviewNotes || null,
+            GeneratedAt: new Date().toISOString(),
+            IsActive: true,
         })
     }
 
@@ -566,7 +707,7 @@ const FacultyAtRiskPage = () => {
                 </div>
                 <Button
                     variant="outline"
-                    onClick={() => refetch()}
+                    onClick={() => { refetch(); refetchPredictions(); }}
                     disabled={isLoading}
                 >
                     <RefreshCcw className={cn('w-4 h-4 mr-2', isLoading && 'animate-spin')} />
@@ -656,6 +797,15 @@ const FacultyAtRiskPage = () => {
                                 ))}
                             </select>
                             <select
+                                value={departmentFilter}
+                                onChange={(e) => setDepartmentFilter(e.target.value)}
+                                className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white"
+                            >
+                                {departmentOptions.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                            <select
                                 value={riskFilter}
                                 onChange={(e) => setRiskFilter(e.target.value)}
                                 className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white"
@@ -713,12 +863,13 @@ const FacultyAtRiskPage = () => {
             ) : viewMode === 'grid' ? (
                 <>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {filteredStudents.map((student) => (
+                        {paginatedStudents.map((student) => (
                             <AtRiskStudentCard
                                 key={student.Id || `${student.StudentId}-${student.CourseOfferingId}`}
                                 student={student}
                                 onViewDetails={handleViewDetails}
                                 onReview={handleReviewStudent}
+                                onCardClick={handleRowClick}
                             />
                         ))}
                     </div>
@@ -727,7 +878,13 @@ const FacultyAtRiskPage = () => {
                             <Pagination
                                 currentPage={currentPage}
                                 totalPages={totalPages}
+                                totalItems={totalCount}
+                                pageSize={pageSize}
                                 onPageChange={setCurrentPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setCurrentPage(1)
+                                }}
                             />
                         </div>
                     )}
@@ -748,12 +905,13 @@ const FacultyAtRiskPage = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {filteredStudents.map((student, index) => (
+                                {paginatedStudents.map((student, index) => (
                                     <AtRiskTableRow
                                         key={student.Id || `${student.StudentId}-${student.CourseOfferingId}`}
                                         student={student}
                                         onViewDetails={handleViewDetails}
                                         onReview={handleReviewStudent}
+                                        onRowClick={handleRowClick}
                                         index={index}
                                     />
                                 ))}
@@ -765,23 +923,39 @@ const FacultyAtRiskPage = () => {
                             <Pagination
                                 currentPage={currentPage}
                                 totalPages={totalPages}
+                                totalItems={totalCount}
+                                pageSize={pageSize}
                                 onPageChange={setCurrentPage}
+                                onPageSizeChange={(size) => {
+                                    setPageSize(size)
+                                    setCurrentPage(1)
+                                }}
                             />
                         </div>
                     )}
                 </Card>
             )}
 
-            {/* Performance Review Modal */}
-            <PerformanceReviewModal
-                isOpen={isReviewModalOpen}
-                onClose={() => {
-                    setIsReviewModalOpen(false)
-                    setSelectedStudent(null)
-                }}
-                student={selectedStudent}
-                onSave={handleSaveReview}
-                isSaving={reviewMutation.isPending}
+            {/* Performance Review Modal - only render when open with student */}
+            {isReviewModalOpen && selectedStudent && (
+                <PerformanceReviewModal
+                    key={`review-${selectedStudent.Id}`}
+                    onClose={() => {
+                        setIsReviewModalOpen(false)
+                        setSelectedStudent(null)
+                    }}
+                    student={selectedStudent}
+                    onSave={handleSaveReview}
+                    isSaving={savePredictionMutation.isPending}
+                />
+            )}
+
+            {/* Student Detail Modal */}
+            <StudentDetailModal
+                isOpen={isViewModalOpen}
+                onClose={handleCloseViewModal}
+                studentId={viewStudentId}
+                showEditButton={false}
             />
         </div>
     )

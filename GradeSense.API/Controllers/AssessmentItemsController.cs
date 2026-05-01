@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Faculty")]
+    [Authorize]
     public class AssessmentItemsController : ControllerBase
     {
         private readonly IAssessmentItemService _assessmentItemService;
@@ -89,6 +89,7 @@ namespace GradeSense.API.Controllers
         /// Create a new assessment item
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<AssessmentItemResponse>>> Create(
@@ -131,6 +132,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing assessment item
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<AssessmentItemResponse>), StatusCodes.Status400BadRequest)]
@@ -172,6 +174,7 @@ namespace GradeSense.API.Controllers
         /// Delete an assessment item (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]

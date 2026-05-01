@@ -9,7 +9,9 @@ namespace GradeSense.API.Interfaces.Repositories
         Task<(List<StudentMark> StudentMarks, int TotalCount)> GetAllAsync(StudentMarkFilterRequest filter);
         Task<List<StudentMark>> GetByAssessmentItemIdAsync(int assessmentItemId);
         Task<List<StudentMark>> GetByCourseOfferingIdAsync(int courseOfferingId);
+        Task<List<StudentMark>> GetByEnrollmentIdsAsync(IEnumerable<int> enrollmentIds);
         Task<StudentMark?> FindByStudentAndAssessmentAsync(int studentId, int assessmentItemId);
+        Task<StudentMark?> GetByEnrollmentAndAssessmentAsync(int enrollmentId, int assessmentItemId);
         Task<StudentMark> CreateAsync(StudentMark studentMark);
         Task<StudentMark> UpdateAsync(StudentMark studentMark);
         Task<bool> DeleteAsync(int id);

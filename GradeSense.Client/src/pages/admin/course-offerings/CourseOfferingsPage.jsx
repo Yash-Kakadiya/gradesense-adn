@@ -609,6 +609,7 @@ const CourseOfferingsPage = () => {
                 isOpen={detailModal.isOpen}
                 onClose={() => setDetailModal({ isOpen: false, courseOffering: null })}
                 courseOffering={detailModal.courseOffering}
+                canManageAssignments={true}
                 onEdit={(courseOffering) => {
                     setDetailModal({ isOpen: false, courseOffering: null })
                     navigate(`${ROUTES.ADMIN_COURSE_OFFERINGS}/${courseOffering.Id}/edit`)

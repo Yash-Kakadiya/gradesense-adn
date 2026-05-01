@@ -4,6 +4,7 @@
     {
         public int Id { get; set; }
         public int EnrollmentId { get; set; }
+        public int StudentId { get; set; }
         public string StudentName { get; set; } = string.Empty;
         public string EnrollmentNumber { get; set; } = string.Empty;
         public string SubjectCode { get; set; } = string.Empty;

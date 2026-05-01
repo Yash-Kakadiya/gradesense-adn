@@ -7,6 +7,7 @@ import { courseEnrollmentService } from '@/services/courseEnrollmentService'
 import { evaluationSchemeService, assessmentItemService } from '@/services/evaluationService'
 import { studentMarkService } from '@/services/studentMarkService'
 import { attendanceService } from '@/services/attendanceService'
+import { exportCourseReport, exportAtRiskToExcel, handleExportDownload } from '@/services/facultyExportService'
 import { cn } from '@/utils/helpers'
 import toast from 'react-hot-toast'
 import {
@@ -73,12 +74,13 @@ const FacultyReportsPage = () => {
     const { user } = useAuth()
     const [selectedCourse, setSelectedCourse] = useState('')
     const [reportType, setReportType] = useState('overview')
+    const [isExporting, setIsExporting] = useState(false)
 
     // Fetch faculty's course assignments
     const { data: assignmentsData, isLoading: loadingAssignments, refetch } = useQuery({
-        queryKey: ['faculty-assignments-reports', user?.id],
-        queryFn: () => facultyAssignmentService.getByFaculty(user?.id),
-        enabled: !!user?.id,
+        queryKey: ['faculty-assignments-reports', user?.facultyId],
+        queryFn: () => facultyAssignmentService.getByFaculty(user?.facultyId),
+        enabled: !!user?.facultyId,
     })
 
     // Extract courses
@@ -156,17 +158,21 @@ const FacultyReportsPage = () => {
         const attendanceRecords = attendanceData?.Data?.Data || attendanceData?.Data || []
         const totalStudents = enrollments.length
 
-        // Calculate marks statistics for each assessment
+        // Calculate marks statistics for each assessment (using correct field names)
         const assessmentStats = {}
         marks.forEach(mark => {
             const assessId = mark.AssessmentItemId
             if (!assessmentStats[assessId]) {
-                assessmentStats[assessId] = { scores: [], maxMarks: 0 }
+                assessmentStats[assessId] = { scores: [], maxMarks: mark.AssessmentMaxMarks || 0 }
             }
-            assessmentStats[assessId].scores.push(mark.MarksObtained)
+            // Store as percentage for consistent comparison
+            const percentage = mark.AssessmentMaxMarks > 0
+                ? ((mark.ObtainedMarks || 0) / mark.AssessmentMaxMarks) * 100
+                : 0
+            assessmentStats[assessId].scores.push(percentage)
         })
 
-        // Compute assessment performance data
+        // Compute assessment performance data (now using percentages)
         const performanceTrend = assessments.slice(0, 6).map(a => {
             const stats = assessmentStats[a.Id]
             const scores = stats?.scores || []
@@ -181,15 +187,15 @@ const FacultyReportsPage = () => {
             }
         })
 
-        // Calculate overall student scores and grades
+        // Calculate overall student scores and grades (using correct field names)
         const studentScores = {}
         marks.forEach(mark => {
             const studentId = mark.StudentId || mark.EnrollmentId
             if (!studentScores[studentId]) {
                 studentScores[studentId] = { totalMarks: 0, totalMaxMarks: 0 }
             }
-            studentScores[studentId].totalMarks += mark.MarksObtained || 0
-            studentScores[studentId].totalMaxMarks += mark.MaxMarks || 0
+            studentScores[studentId].totalMarks += mark.ObtainedMarks || 0
+            studentScores[studentId].totalMaxMarks += mark.AssessmentMaxMarks || 0
         })
 
         const percentages = Object.values(studentScores).map(s =>
@@ -299,8 +305,51 @@ const FacultyReportsPage = () => {
         }
     }, [selectedCourse, enrollmentsData, assessmentsData, marksData, attendanceData])
 
-    const handleExport = (format) => {
-        toast.success(`Report exported as ${format.toUpperCase()}`)
+    const handleExport = async (format) => {
+        if (!selectedCourse) {
+            toast.error('Please select a course to export')
+            return
+        }
+
+        if (format === 'pdf') {
+            toast.error('PDF export is not yet supported. Please use Excel export.')
+            return
+        }
+
+        setIsExporting(true)
+
+        try {
+            const courseId = parseInt(selectedCourse)
+            const response = await exportCourseReport(courseId)
+            handleExportDownload(response, `course_report_${courseId}.xlsx`)
+            toast.success('Report exported successfully!')
+        } catch (error) {
+            console.error('Export failed:', error)
+            toast.error('Failed to export report. Please try again.')
+        } finally {
+            setIsExporting(false)
+        }
+    }
+
+    const handleExportAtRisk = async () => {
+        if (!selectedCourse) {
+            toast.error('Please select a course to export')
+            return
+        }
+
+        setIsExporting(true)
+
+        try {
+            const courseId = parseInt(selectedCourse)
+            const response = await exportAtRiskToExcel(courseId)
+            handleExportDownload(response, `at_risk_students_${courseId}.xlsx`)
+            toast.success('At-risk students report exported successfully!')
+        } catch (error) {
+            console.error('Export failed:', error)
+            toast.error('Failed to export at-risk report. Please try again.')
+        } finally {
+            setIsExporting(false)
+        }
     }
 
     const reportTypes = [
@@ -327,14 +376,26 @@ const FacultyReportsPage = () => {
                         View comprehensive reports and analytics for your courses
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={() => handleExport('pdf')} disabled={!selectedCourse}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Export PDF
+                <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                        variant="outline"
+                        onClick={() => handleExport('excel')}
+                        disabled={!selectedCourse || isExporting}
+                    >
+                        {isExporting ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                            <Download className="w-4 h-4 mr-2" />
+                        )}
+                        Full Report
                     </Button>
-                    <Button variant="outline" onClick={() => handleExport('excel')} disabled={!selectedCourse}>
-                        <FileText className="w-4 h-4 mr-2" />
-                        Export Excel
+                    <Button
+                        variant="outline"
+                        onClick={handleExportAtRisk}
+                        disabled={!selectedCourse || isExporting}
+                    >
+                        <AlertTriangle className="w-4 h-4 mr-2" />
+                        At-Risk Report
                     </Button>
                 </div>
             </div>

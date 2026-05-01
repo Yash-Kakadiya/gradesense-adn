@@ -10,6 +10,7 @@ import {
     Card,
     ConfirmDialog,
     ExportDropdown,
+    BulkImportModal,
 } from '@/components/common'
 import { facultyService } from '@/services/facultyService'
 import { departmentService } from '@/services/departmentService'
@@ -45,6 +46,7 @@ import {
     Users,
     GraduationCap,
     Award,
+    Upload,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getErrorMessage } from '@/utils/errorHandler'
@@ -361,6 +363,7 @@ const FacultiesPage = () => {
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const deleteModal = useModal()
+    const bulkImportModal = useModal()
     const [viewFacultyId, setViewFacultyId] = useState(null)
     const [isViewModalOpen, setIsViewModalOpen] = useState(false)
 
@@ -545,6 +548,14 @@ const FacultiesPage = () => {
                         onExportCsv={handleExportCsv}
                         onExportExcel={handleExportExcel}
                     />
+                    <Button
+                        variant="outline"
+                        onClick={bulkImportModal.open}
+                        className="gap-2"
+                    >
+                        <Upload className="w-4 h-4" />
+                        Import
+                    </Button>
                     <Button
                         onClick={() => navigate(`${ROUTES.ADMIN_FACULTIES}/create`)}
                         className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/25"
@@ -930,6 +941,37 @@ const FacultiesPage = () => {
                 message={`Are you sure you want to delete "${deleteModal.data?.FullName}"? This action cannot be undone.`}
                 confirmText="Delete"
                 loading={deleteMutation.isPending}
+            />
+
+            {/* Bulk Import Modal */}
+            <BulkImportModal
+                isOpen={bulkImportModal.isOpen}
+                onClose={bulkImportModal.close}
+                title="Import Faculty"
+                entityName="faculty"
+                onDownloadTemplate={() => facultyService.getImportTemplate()}
+                onValidate={({ file }) => facultyService.validateImport(file)}
+                onExecuteImport={(data) => facultyService.executeImport({
+                    conflictResolution: data.conflictResolution,
+                    rows: data.rows.map(row => ({
+                        rowNumber: row.rowNumber,
+                        personalEmail: row.personalEmail || row.rollNumber,
+                        institutionalEmail: row.institutionalEmail,
+                        phoneNumber: row.phoneNumber,
+                        fullName: row.fullName || row.studentName,
+                        password: row.password,
+                        employeeId: row.employeeId,
+                        designation: row.designation,
+                        departmentCode: row.departmentCode,
+                        joiningDate: row.joiningDate,
+                        status: row.status || 'Active'
+                    }))
+                })}
+                onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ['faculties'] })
+                    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+                    toast.success('Faculty imported successfully')
+                }}
             />
         </div>
     )

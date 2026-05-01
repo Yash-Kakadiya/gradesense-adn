@@ -177,6 +177,22 @@ namespace GradeSense.API.Repositories
             return predictions.Count;
         }
 
+        public async Task<int> DeactivateByEnrollmentIdAsync(int enrollmentId)
+        {
+            var predictions = await _context.Predictions
+                .Where(p => p.CourseEnrollmentId == enrollmentId && p.IsActive && p.DeletedAt == null)
+                .ToListAsync();
+
+            foreach (var p in predictions)
+            {
+                p.IsActive = false;
+                p.UpdatedAt = DateTime.Now;
+            }
+
+            await _context.SaveChangesAsync();
+            return predictions.Count;
+        }
+
         public async Task<bool> ExistsAsync(string id)
         {
             return await _context.Predictions.AnyAsync(p => p.Id == id && p.DeletedAt == null);

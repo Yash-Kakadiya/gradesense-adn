@@ -23,6 +23,7 @@ const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'))
 const AdminProfilePage = lazy(() => import('@/pages/admin/profile/AdminProfilePage'))
 const UsersPage = lazy(() => import('@/pages/admin/users/UsersPage'))
 const UserFormPage = lazy(() => import('@/pages/admin/users/UserFormPage'))
+const AdminAnalyticsPage = lazy(() => import('@/pages/admin/AdminAnalyticsPage'))
 const DepartmentsPage = lazy(() => import('@/pages/admin/departments/DepartmentsPage'))
 const DepartmentFormPage = lazy(() => import('@/pages/admin/departments/DepartmentFormPage'))
 const BatchesPage = lazy(() => import('@/pages/admin/batches/BatchesPage'))
@@ -51,6 +52,7 @@ const FacultyGradesPage = lazy(() => import('@/pages/faculty/FacultyGradesPage')
 const FacultyAttendancePage = lazy(() => import('@/pages/faculty/FacultyAttendancePage'))
 const FacultyAtRiskPage = lazy(() => import('@/pages/faculty/FacultyAtRiskPage'))
 const FacultyReportsPage = lazy(() => import('@/pages/faculty/FacultyReportsPage'))
+const FacultyAnalyticsPage = lazy(() => import('@/pages/faculty/FacultyAnalyticsPage'))
 const FacultyProfilePage = lazy(() => import('@/pages/faculty/FacultyProfilePage'))
 
 // Student pages
@@ -58,6 +60,7 @@ const StudentDashboard = lazy(() => import('@/pages/student/StudentDashboard'))
 const StudentCoursesPage = lazy(() => import('@/pages/student/StudentCoursesPage'))
 const StudentGradesPage = lazy(() => import('@/pages/student/StudentGradesPage'))
 const StudentAttendancePage = lazy(() => import('@/pages/student/StudentAttendancePage'))
+const StudentFacultiesPage = lazy(() => import('@/pages/student/StudentFacultiesPage'))
 const StudentProfilePage = lazy(() => import('@/pages/student/StudentProfilePage'))
 
 // Suspense wrapper
@@ -95,6 +98,14 @@ export const router = createBrowserRouter([
                                         element: (
                                             <SuspenseWrapper>
                                                 <AdminDashboard />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.ADMIN_ANALYTICS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <AdminAnalyticsPage />
                                             </SuspenseWrapper>
                                         ),
                                     },
@@ -386,6 +397,14 @@ export const router = createBrowserRouter([
                                         ),
                                     },
                                     {
+                                        path: ROUTES.FACULTY_ANALYTICS,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <FacultyAnalyticsPage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
                                         path: ROUTES.FACULTY_ATTENDANCE,
                                         element: (
                                             <SuspenseWrapper>
@@ -445,6 +464,14 @@ export const router = createBrowserRouter([
                                         element: (
                                             <SuspenseWrapper>
                                                 <StudentAttendancePage />
+                                            </SuspenseWrapper>
+                                        ),
+                                    },
+                                    {
+                                        path: ROUTES.STUDENT_FACULTIES,
+                                        element: (
+                                            <SuspenseWrapper>
+                                                <StudentFacultiesPage />
                                             </SuspenseWrapper>
                                         ),
                                     },

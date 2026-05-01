@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Faculty")]
+    [Authorize]
     public class StudentsController : ControllerBase
     {
         private readonly IStudentService _studentService;
@@ -30,6 +30,7 @@ namespace GradeSense.API.Controllers
         /// Get all students with filtering and pagination
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<PagedResponse<StudentListResponse>>), StatusCodes.Status200OK)]
         public async Task<ActionResult<ApiResponse<PagedResponse<StudentListResponse>>>> GetAll(
             [FromQuery] StudentFilterRequest filter)
@@ -65,7 +66,7 @@ namespace GradeSense.API.Controllers
                 // Students can only view their own profile
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId) || id != studentId)
                     {
                         return Forbid();
@@ -105,7 +106,7 @@ namespace GradeSense.API.Controllers
         {
             try
             {
-                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                var userIdClaim = User.FindFirst("sub")?.Value;
                 if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId))
                 {
                     return Unauthorized(ApiResponse<StudentDetailResponse>.ErrorResponse("User ID not found in token"));
@@ -137,6 +138,7 @@ namespace GradeSense.API.Controllers
         /// Create a new student
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<StudentResponse>>> Create(
@@ -179,6 +181,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing student
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status400BadRequest)]
@@ -228,6 +231,7 @@ namespace GradeSense.API.Controllers
         /// Delete a student (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
@@ -318,6 +322,7 @@ namespace GradeSense.API.Controllers
         /// Export students to CSV file
         /// </summary>
         [HttpGet("export/csv")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         public async Task<IActionResult> ExportToCsv([FromQuery] StudentExportFilterRequest filter)
         {
@@ -338,22 +343,101 @@ namespace GradeSense.API.Controllers
         }
 
         /// <summary>
-        /// Download CSV import template
+        /// Download student import template (Excel)
         /// </summary>
         [HttpGet("import/template")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetImportTemplate()
         {
             try
             {
-                var csvBytes = await _studentService.GetImportTemplateAsync();
-                return File(csvBytes, "text/csv", "student_import_template.csv");
+                var templateBytes = await _studentService.GetStudentImportTemplateAsync();
+                return File(templateBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "student_import_template.xlsx");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error generating student import template");
                 return StatusCode(500, ApiResponse<object>.ErrorResponse(
                     "An error occurred while generating template"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Validate student import file
+        /// </summary>
+        /// <param name="file">Excel or CSV file</param>
+        /// <returns>Validation results with preview</returns>
+        [HttpPost("import/validate")]
+        [Authorize(Roles = "Admin")]
+        [ProducesResponseType(typeof(ApiResponse<BulkStudentValidationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkStudentValidationResponse>>> ValidateImport(IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(ApiResponse<BulkStudentValidationResponse>.ErrorResponse("No file uploaded"));
+                }
+
+                var extension = Path.GetExtension(file.FileName).ToLower();
+                if (extension != ".xlsx" && extension != ".xls" && extension != ".csv")
+                {
+                    return BadRequest(ApiResponse<BulkStudentValidationResponse>.ErrorResponse("Invalid file type. Only Excel (.xlsx, .xls) and CSV (.csv) files are supported"));
+                }
+
+                using var stream = file.OpenReadStream();
+                var result = await _studentService.ValidateStudentImportAsync(stream, extension);
+
+                return Ok(ApiResponse<BulkStudentValidationResponse>.SuccessResponse(
+                    result,
+                    "File validated successfully"
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating student import file");
+                return StatusCode(500, ApiResponse<BulkStudentValidationResponse>.ErrorResponse(
+                    "An error occurred while validating the file"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Execute student import
+        /// </summary>
+        /// <param name="request">Import request with validated rows</param>
+        /// <returns>Import results</returns>
+        [HttpPost("import/execute")]
+        [Authorize(Roles = "Admin")]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<StudentResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkOperationResponse<StudentResponse>>>> ExecuteImport([FromBody] BulkStudentImportRequest request)
+        {
+            try
+            {
+                if (request.Rows == null || !request.Rows.Any())
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<StudentResponse>>.ErrorResponse("No rows to import"));
+                }
+
+                var result = await _studentService.ImportStudentsWithValidationAsync(request);
+
+                // Create audit log
+                await _auditLogger.LogAsync("BulkImport", "Student", null, $"Bulk imported {result.SuccessCount} students, {result.ErrorCount} errors");
+
+                return Ok(ApiResponse<BulkOperationResponse<StudentResponse>>.SuccessResponse(
+                    result,
+                    $"Import completed: {result.SuccessCount} successful, {result.ErrorCount} errors"
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing student import");
+                return StatusCode(500, ApiResponse<BulkOperationResponse<StudentResponse>>.ErrorResponse(
+                    "An error occurred while importing students"
                 ));
             }
         }

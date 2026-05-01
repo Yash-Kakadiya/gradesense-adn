@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Card, Badge, Button, Modal, EmptyState } from '@/components/common'
+import { Card, Badge, Button, Modal, EmptyState, BulkImportModal } from '@/components/common'
 import { useAuth } from '@/context/AuthContext'
 import { useModal } from '@/hooks'
 import { facultyAssignmentService } from '@/services/facultyAssignmentService'
 import { attendanceService } from '@/services/attendanceService'
 import { courseEnrollmentService } from '@/services/courseEnrollmentService'
+import { exportAttendanceToCsv, exportAttendanceToExcel, handleExportDownload } from '@/services/facultyExportService'
+import StudentDetailModal from '@/components/students/StudentDetailModal'
 import { getErrorMessage } from '@/utils/errorHandler'
 import { cn } from '@/utils/helpers'
 import toast from 'react-hot-toast'
@@ -27,6 +29,10 @@ import {
     UserX,
     AlertCircle,
     Search,
+    Download,
+    Upload,
+    FileSpreadsheet,
+    FileText,
 } from 'lucide-react'
 
 // Attendance Button Component
@@ -46,7 +52,7 @@ const AttendanceButton = ({ status, currentStatus, onClick, icon: Icon, label, c
 )
 
 // Student Attendance Row
-const StudentAttendanceRow = ({ student, status, onStatusChange, index }) => {
+const StudentAttendanceRow = ({ student, status, onStatusChange, onRowClick, index }) => {
     const getStatusBadge = () => {
         if (!status) return <Badge variant="secondary">Not marked</Badge>
         const variants = {
@@ -58,11 +64,19 @@ const StudentAttendanceRow = ({ student, status, onStatusChange, index }) => {
         return <Badge variant={variants[status]}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>
     }
 
+    const handleStatusClick = (e, newStatus) => {
+        e.stopPropagation()
+        onStatusChange(newStatus)
+    }
+
     return (
-        <tr className={cn(
-            "hover:bg-gray-50 transition-colors",
-            index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-        )}>
+        <tr
+            className={cn(
+                "hover:bg-gray-50 transition-colors cursor-pointer",
+                index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+            )}
+            onClick={() => onRowClick && onRowClick(student)}
+        >
             <td className="px-4 py-3 text-sm text-gray-500">{index + 1}</td>
             <td className="px-4 py-3">
                 <div className="flex items-center gap-3">
@@ -93,7 +107,7 @@ const StudentAttendanceRow = ({ student, status, onStatusChange, index }) => {
             <td className="px-4 py-3">
                 <div className="flex items-center justify-center gap-2">
                     <button
-                        onClick={() => onStatusChange('present')}
+                        onClick={(e) => handleStatusClick(e, 'present')}
                         className={cn(
                             "p-2 rounded-lg transition-all",
                             status === 'present'
@@ -105,7 +119,7 @@ const StudentAttendanceRow = ({ student, status, onStatusChange, index }) => {
                         <Check className="w-4 h-4" />
                     </button>
                     <button
-                        onClick={() => onStatusChange('absent')}
+                        onClick={(e) => handleStatusClick(e, 'absent')}
                         className={cn(
                             "p-2 rounded-lg transition-all",
                             status === 'absent'
@@ -117,7 +131,7 @@ const StudentAttendanceRow = ({ student, status, onStatusChange, index }) => {
                         <X className="w-4 h-4" />
                     </button>
                     <button
-                        onClick={() => onStatusChange('late')}
+                        onClick={(e) => handleStatusClick(e, 'late')}
                         className={cn(
                             "p-2 rounded-lg transition-all",
                             status === 'late'
@@ -129,7 +143,7 @@ const StudentAttendanceRow = ({ student, status, onStatusChange, index }) => {
                         <Clock className="w-4 h-4" />
                     </button>
                     <button
-                        onClick={() => onStatusChange('excused')}
+                        onClick={(e) => handleStatusClick(e, 'excused')}
                         className={cn(
                             "p-2 rounded-lg transition-all",
                             status === 'excused'
@@ -154,12 +168,63 @@ const FacultyAttendancePage = () => {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
     const [attendance, setAttendance] = useState({})
     const [searchTerm, setSearchTerm] = useState('')
+    const [statusFilter, setStatusFilter] = useState('')
+    const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
+    const [isExporting, setIsExporting] = useState(false)
+    const exportDropdownRef = useRef(null)
+    const bulkUploadModal = useModal()
+
+    // Student detail modal state
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+    const [viewStudentId, setViewStudentId] = useState(null)
+
+    // Close export dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
+                setIsExportDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    // Export handlers
+    const handleExportAttendance = async (format) => {
+        if (!selectedCourse) {
+            toast.error('Please select a course to export attendance')
+            setIsExportDropdownOpen(false)
+            return
+        }
+
+        setIsExporting(true)
+        setIsExportDropdownOpen(false)
+
+        try {
+            const courseId = parseInt(selectedCourse)
+            const response = format === 'csv'
+                ? await exportAttendanceToCsv(courseId)
+                : await exportAttendanceToExcel(courseId)
+
+            const defaultFilename = format === 'csv'
+                ? `attendance_${courseId}.csv`
+                : `attendance_${courseId}.xlsx`
+
+            handleExportDownload(response, defaultFilename)
+            toast.success('Export successful!')
+        } catch (error) {
+            console.error('Export failed:', error)
+            toast.error('Failed to export attendance. Please try again.')
+        } finally {
+            setIsExporting(false)
+        }
+    }
 
     // Fetch faculty's course assignments
     const { data: assignmentsData, isLoading: loadingAssignments, refetch } = useQuery({
-        queryKey: ['faculty-assignments-attendance', user?.id],
-        queryFn: () => facultyAssignmentService.getByFaculty(user?.id),
-        enabled: !!user?.id,
+        queryKey: ['faculty-assignments-attendance', user?.facultyId],
+        queryFn: () => facultyAssignmentService.getByFaculty(user?.facultyId),
+        enabled: !!user?.facultyId,
     })
 
     // Fetch enrolled students for selected course
@@ -170,14 +235,19 @@ const FacultyAttendancePage = () => {
     })
 
     // Fetch existing attendance for the selected date and course
-    const { data: existingAttendanceData, isLoading: loadingAttendance } = useQuery({
+    const { data: existingAttendanceData, isLoading: loadingAttendance, isFetching: fetchingAttendance } = useQuery({
         queryKey: ['attendance', selectedCourse, selectedDate],
         queryFn: () => attendanceService.getAll({
             courseOfferingId: selectedCourse,
-            date: selectedDate,
+            fromDate: selectedDate,
+            toDate: selectedDate,
             pageSize: 1000,
         }),
         enabled: !!selectedCourse && !!selectedDate,
+        // Don't keep previous data - ensures clean state when switching dates
+        placeholderData: undefined,
+        staleTime: 0,
+        gcTime: 0,
     })
 
     // Extract data
@@ -189,27 +259,44 @@ const FacultyAttendancePage = () => {
         enrollmentsData?.Data?.Data || enrollmentsData?.Data || [],
         [enrollmentsData])
 
-    const existingAttendance = useMemo(() =>
-        existingAttendanceData?.Data?.Data || existingAttendanceData?.Data || [],
-        [existingAttendanceData])
+    const existingAttendance = useMemo(() => {
+        const data = existingAttendanceData?.Data?.Data || existingAttendanceData?.Data || []
+        console.log('[FacultyAttendancePage] existingAttendanceData raw:', existingAttendanceData)
+        console.log('[FacultyAttendancePage] existingAttendance extracted:', data)
+        return data
+    }, [existingAttendanceData])
 
     // Selected course details
     const selectedCourseDetails = useMemo(() =>
         courseAssignments.find(a => a.CourseOfferingId?.toString() === selectedCourse),
         [courseAssignments, selectedCourse])
 
-    // Initialize attendance from existing records
+    // Initialize attendance from existing records - only when not loading/fetching
+    // This ensures we don't use stale data from previous date
     useEffect(() => {
+        console.log('[FacultyAttendancePage] useEffect triggered:', {
+            fetchingAttendance,
+            loadingAttendance,
+            existingAttendanceLength: existingAttendance?.length,
+            selectedDate
+        })
+
+        // Clear attendance when starting a new fetch (date changed)
+        if (fetchingAttendance || loadingAttendance) {
+            setAttendance({})
+            return
+        }
+
+        const initialAttendance = {}
         if (existingAttendance.length > 0) {
-            const initialAttendance = {}
+            console.log('[FacultyAttendancePage] existingAttendance sample:', existingAttendance[0])
             existingAttendance.forEach(record => {
                 initialAttendance[record.StudentId] = record.Status?.toLowerCase() || null
             })
-            setAttendance(initialAttendance)
-        } else {
-            setAttendance({})
         }
-    }, [existingAttendance])
+        console.log('[FacultyAttendancePage] Setting attendance:', initialAttendance)
+        setAttendance(initialAttendance)
+    }, [existingAttendance, fetchingAttendance, loadingAttendance, selectedDate])
 
     // Bulk mark mutation
     const bulkMarkMutation = useMutation({
@@ -231,11 +318,32 @@ const FacultyAttendancePage = () => {
         Name: e.StudentName || e.Name,
     })), [enrollments])
 
-    // Filtered students
-    const filteredStudents = useMemo(() => students.filter(
-        s => s.Name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    // Filtered students by search term and status filter
+    const filteredStudents = useMemo(() => students.filter(s => {
+        // Search filter
+        const matchesSearch = !searchTerm ||
+            s.Name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             s.RollNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-    ), [students, searchTerm])
+
+        // Status filter
+        const studentStatus = attendance[s.StudentId || s.Id] || null
+        const matchesStatus = !statusFilter ||
+            (statusFilter === 'not-marked' && !studentStatus) ||
+            (statusFilter !== 'not-marked' && studentStatus === statusFilter)
+
+        return matchesSearch && matchesStatus
+    }), [students, searchTerm, statusFilter, attendance])
+
+    // Student detail modal handlers
+    const handleViewStudent = (student) => {
+        setViewStudentId(student.StudentId || student.Id)
+        setIsViewModalOpen(true)
+    }
+
+    const handleCloseViewModal = () => {
+        setIsViewModalOpen(false)
+        setViewStudentId(null)
+    }
 
     const handleAttendanceChange = (studentId, status) => {
         setAttendance((prev) => ({ ...prev, [studentId]: status }))
@@ -316,14 +424,60 @@ const FacultyAttendancePage = () => {
                         Mark and manage student attendance for your courses
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    onClick={() => refetch()}
-                    disabled={loadingAssignments}
-                >
-                    <RefreshCcw className={cn('w-4 h-4 mr-2', loadingAssignments && 'animate-spin')} />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    {/* Export Dropdown */}
+                    <div className="relative" ref={exportDropdownRef}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            disabled={isExporting || !selectedCourse}
+                            title={!selectedCourse ? 'Select a course to export' : 'Export attendance'}
+                        >
+                            {isExporting ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Export
+                            <ChevronDown className="w-4 h-4 ml-1" />
+                        </Button>
+                        {isExportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
+                                <button
+                                    onClick={() => handleExportAttendance('csv')}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <FileText className="w-4 h-4 text-gray-500" />
+                                    Export as CSV
+                                </button>
+                                <button
+                                    onClick={() => handleExportAttendance('excel')}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                    Export as Excel
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    <Button
+                        variant="outline"
+                        onClick={() => bulkUploadModal.open()}
+                        disabled={!selectedCourse}
+                        title={!selectedCourse ? 'Select a course first' : 'Import attendance from file'}
+                    >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Import
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => refetch()}
+                        disabled={loadingAssignments}
+                    >
+                        <RefreshCcw className={cn('w-4 h-4 mr-2', loadingAssignments && 'animate-spin')} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* Selection Cards */}
@@ -493,6 +647,19 @@ const FacultyAttendancePage = () => {
                                             className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent w-40"
                                         />
                                     </div>
+                                    {/* Status Filter */}
+                                    <select
+                                        value={statusFilter}
+                                        onChange={(e) => setStatusFilter(e.target.value)}
+                                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
+                                    >
+                                        <option value="">All Status</option>
+                                        <option value="present">Present</option>
+                                        <option value="absent">Absent</option>
+                                        <option value="late">Late</option>
+                                        <option value="excused">Excused</option>
+                                        <option value="not-marked">Not Marked</option>
+                                    </select>
                                     {/* Quick Actions */}
                                     <Button variant="outline" size="sm" onClick={() => handleMarkAll('present')}>
                                         <UserCheck className="w-4 h-4 mr-2 text-green-600" />
@@ -542,6 +709,7 @@ const FacultyAttendancePage = () => {
                                             student={student}
                                             status={attendance[student.StudentId || student.Id]}
                                             onStatusChange={(status) => handleAttendanceChange(student.StudentId || student.Id, status)}
+                                            onRowClick={handleViewStudent}
                                             index={index}
                                         />
                                     ))}
@@ -565,6 +733,48 @@ const FacultyAttendancePage = () => {
                     </Card.Body>
                 </Card>
             )}
+
+            {/* Bulk Import Modal */}
+            <BulkImportModal
+                isOpen={bulkUploadModal.isOpen}
+                onClose={bulkUploadModal.close}
+                title="Import Attendance"
+                entityName="attendance"
+                onDownloadTemplate={() => attendanceService.getTemplateExcel(parseInt(selectedCourse))}
+                onValidate={({ file }) => attendanceService.validateImport(parseInt(selectedCourse), selectedDate, file)}
+                onExecuteImport={(data) => {
+                    const importPayload = {
+                        courseOfferingId: parseInt(selectedCourse),
+                        attendanceDate: selectedDate,
+                        markedById: user?.facultyId,
+                        conflictResolution: data.conflictResolution,
+                        rows: data.rows.map(row => ({
+                            rowNumber: row.rowNumber,
+                            rollNumber: row.rollNumber,
+                            status: row.status || 'Present',
+                            remarks: row.remarks || ''
+                        }))
+                    }
+                    console.log('[FacultyAttendancePage] Import payload:', importPayload)
+                    console.log('[FacultyAttendancePage] data.rows:', data.rows)
+                    return attendanceService.executeImport(importPayload)
+                }}
+                importContext={{ courseOfferingId: parseInt(selectedCourse), date: selectedDate }}
+                onSuccess={() => {
+                    console.log('[FacultyAttendancePage] Import success - refetching queries...')
+                    // Use refetchQueries to force immediate refetch
+                    queryClient.refetchQueries({ queryKey: ['attendance', selectedCourse, selectedDate] })
+                    toast.success('Attendance imported successfully')
+                }}
+            />
+
+            {/* Student Detail Modal */}
+            <StudentDetailModal
+                isOpen={isViewModalOpen}
+                onClose={handleCloseViewModal}
+                studentId={viewStudentId}
+                showEditButton={false}
+            />
         </div>
     )
 }

@@ -10,6 +10,7 @@ import {
     Card,
     ConfirmDialog,
     ExportDropdown,
+    BulkImportModal,
 } from '@/components/common'
 import { studentService } from '@/services/studentService'
 import { departmentService } from '@/services/departmentService'
@@ -44,6 +45,7 @@ import {
     Users,
     ClipboardList,
     BarChart3,
+    Upload,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getErrorMessage } from '@/utils/errorHandler'
@@ -344,6 +346,7 @@ const StudentsPage = () => {
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const deleteModal = useModal()
+    const bulkImportModal = useModal()
     const [viewStudentId, setViewStudentId] = useState(null)
     const [isViewModalOpen, setIsViewModalOpen] = useState(false)
 
@@ -526,6 +529,14 @@ const StudentsPage = () => {
                         onExportCsv={handleExportCsv}
                         onExportExcel={handleExportExcel}
                     />
+                    <Button
+                        variant="outline"
+                        onClick={bulkImportModal.open}
+                        className="gap-2"
+                    >
+                        <Upload className="w-4 h-4" />
+                        Import
+                    </Button>
                     <Button
                         onClick={() => navigate(`${ROUTES.ADMIN_STUDENTS}/create`)}
                         className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-emerald-500/25"
@@ -915,6 +926,38 @@ const StudentsPage = () => {
                 message={`Are you sure you want to delete "${deleteModal.data?.FullName}"? This will also remove all their enrollments and records.`}
                 confirmText="Delete"
                 loading={deleteMutation.isPending}
+            />
+
+            {/* Bulk Import Modal */}
+            <BulkImportModal
+                isOpen={bulkImportModal.isOpen}
+                onClose={bulkImportModal.close}
+                title="Import Students"
+                entityName="students"
+                onDownloadTemplate={() => studentService.getImportTemplate()}
+                onValidate={({ file }) => studentService.validateImport(file)}
+                onExecuteImport={(data) => studentService.executeImport({
+                    conflictResolution: data.conflictResolution,
+                    rows: data.rows.map(row => ({
+                        rowNumber: row.rowNumber,
+                        personalEmail: row.personalEmail || row.rollNumber,
+                        institutionalEmail: row.institutionalEmail,
+                        phoneNumber: row.phoneNumber,
+                        fullName: row.fullName || row.studentName,
+                        password: row.password,
+                        enrollmentNumber: row.enrollmentNumber,
+                        admissionYear: row.admissionYear,
+                        currentSemester: row.currentSemester,
+                        departmentCode: row.departmentCode,
+                        batchName: row.batchName,
+                        status: row.status || 'Active'
+                    }))
+                })}
+                onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ['students'] })
+                    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+                    toast.success('Students imported successfully')
+                }}
             />
         </div>
     )

@@ -34,6 +34,7 @@ namespace GradeSense.API.Services
             var data = predictions.Select(p => new PredictionListResponse
             {
                 Id = p.Id,
+                CourseEnrollmentId = p.CourseEnrollmentId,
                 StudentName = p.CourseEnrollment.Student.IdNavigation.FullName,
                 EnrollmentNumber = p.CourseEnrollment.Student.EnrollmentNumber,
                 SubjectCode = p.CourseEnrollment.CourseOffering.Subject.Code,
@@ -42,6 +43,7 @@ namespace GradeSense.API.Services
                 RiskScore = p.RiskScore,
                 ConfidenceScore = p.ConfidenceScore,
                 PredictedGrade = p.PredictedGrade,
+                RecommendedActions = p.RecommendedActions,
                 IsActive = p.IsActive,
                 IsExpired = p.ExpiresAt.HasValue && p.ExpiresAt.Value < now,
                 GeneratedAt = p.GeneratedAt,
@@ -101,6 +103,9 @@ namespace GradeSense.API.Services
             // Validate CourseEnrollment exists
             if (!await _courseEnrollmentRepository.ExistsAsync(request.CourseEnrollmentId))
                 throw new KeyNotFoundException("Course enrollment not found");
+
+            // Deactivate existing active predictions for this enrollment
+            await _predictionRepository.DeactivateByEnrollmentIdAsync(request.CourseEnrollmentId);
 
             // Generate GUID for Id
             var predictionId = Guid.NewGuid().ToString();

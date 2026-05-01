@@ -80,10 +80,15 @@ public class DashboardController : ControllerBase
     {
         try
         {
-            // TODO: Add authorization check - students should only access their own dashboard
-            // var currentUserId = int.Parse(User.FindFirst("userId")?.Value ?? "0");
-            // if (!User.IsInRole("Admin") && currentUserId != studentId)
-            //     return Forbid();
+            // Students can only access their own dashboard
+            if (User.IsInRole("Student"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || userId != studentId)
+                {
+                    return Forbid();
+                }
+            }
 
             _logger.LogInformation("Student dashboard requested for student ID: {StudentId}", studentId);
             var dashboard = await _dashboardService.GetStudentDashboardAsync(studentId);
@@ -98,6 +103,184 @@ public class DashboardController : ControllerBase
         {
             _logger.LogError(ex, "Error fetching student dashboard for ID: {StudentId}", studentId);
             return StatusCode(500, ApiResponse<StudentDashboardResponse>.ErrorResponse("An error occurred while fetching dashboard data"));
+        }
+    }
+
+    /// <summary>
+    /// Get student attendance calendar view
+    /// </summary>
+    /// <remarks>
+    /// Provides a calendar view of student attendance with:
+    /// - Monthly calendar with day-wise attendance
+    /// - Course filtering option
+    /// - Summary statistics for the month
+    /// - Available courses for filter
+    /// </remarks>
+    /// <param name="studentId">Student ID</param>
+    /// <param name="year">Year (optional, defaults to current year)</param>
+    /// <param name="month">Month 1-12 (optional, defaults to current month)</param>
+    /// <param name="courseOfferingId">Course offering ID for filtering (optional)</param>
+    /// <returns>Attendance calendar data</returns>
+    [HttpGet("student/{studentId:int}/attendance-calendar")]
+    [Authorize(Roles = "Admin,Student")]
+    [ProducesResponseType(typeof(ApiResponse<AttendanceCalendarResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<AttendanceCalendarResponse>>> GetAttendanceCalendar(
+        int studentId,
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
+        [FromQuery] int? courseOfferingId = null)
+    {
+        try
+        {
+            // Students can only access their own attendance
+            if (User.IsInRole("Student"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || userId != studentId)
+                {
+                    return Forbid();
+                }
+            }
+
+            _logger.LogInformation("Attendance calendar requested for student ID: {StudentId}, Year: {Year}, Month: {Month}", studentId, year, month);
+            var calendar = await _dashboardService.GetAttendanceCalendarAsync(studentId, year, month, courseOfferingId);
+            return Ok(ApiResponse<AttendanceCalendarResponse>.SuccessResponse(calendar, "Attendance calendar retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching attendance calendar for student ID: {StudentId}", studentId);
+            return StatusCode(500, ApiResponse<AttendanceCalendarResponse>.ErrorResponse("An error occurred while fetching attendance calendar"));
+        }
+    }
+
+    /// <summary>
+    /// Get comprehensive grade analytics for a student
+    /// </summary>
+    /// <remarks>
+    /// Provides detailed grade analysis including:
+    /// - Grade distribution (A, B, C, D, F counts)
+    /// - Course-wise performance breakdown
+    /// - Assessment type performance
+    /// - Semester GPA trends
+    /// </remarks>
+    /// <param name="studentId">Student ID</param>
+    /// <param name="semester">Optional semester filter</param>
+    /// <returns>Grade analytics data</returns>
+    [HttpGet("student/{studentId:int}/grade-analytics")]
+    [Authorize(Roles = "Admin,Student")]
+    [ProducesResponseType(typeof(ApiResponse<GradeAnalyticsResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<GradeAnalyticsResponse>>> GetGradeAnalytics(
+        int studentId,
+        [FromQuery] int? semester = null)
+    {
+        try
+        {
+            // Students can only access their own analytics
+            if (User.IsInRole("Student"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || userId != studentId)
+                {
+                    return Forbid();
+                }
+            }
+
+            _logger.LogInformation("Grade analytics requested for student ID: {StudentId}, Semester: {Semester}", studentId, semester);
+            var analytics = await _dashboardService.GetGradeAnalyticsAsync(studentId, semester);
+            return Ok(ApiResponse<GradeAnalyticsResponse>.SuccessResponse(analytics, "Grade analytics retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching grade analytics for student ID: {StudentId}", studentId);
+            return StatusCode(500, ApiResponse<GradeAnalyticsResponse>.ErrorResponse("An error occurred while fetching grade analytics"));
+        }
+    }
+
+    /// <summary>
+    /// Calculate What-If GPA projection
+    /// </summary>
+    /// <remarks>
+    /// Allows students to input hypothetical grades and see:
+    /// - Projected semester GPA
+    /// - Projected CGPA
+    /// - Impact analysis (positive/negative/neutral)
+    /// - Grade requirements to achieve targets
+    /// </remarks>
+    /// <param name="request">What-if calculator request with hypothetical grades</param>
+    /// <returns>GPA projection results</returns>
+    [HttpPost("student/what-if-calculator")]
+    [Authorize(Roles = "Admin,Student")]
+    [ProducesResponseType(typeof(ApiResponse<WhatIfCalculatorResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<WhatIfCalculatorResponse>>> CalculateWhatIf(
+        [FromBody] WhatIfCalculatorRequest request)
+    {
+        try
+        {
+            // Students can only calculate for themselves
+            if (User.IsInRole("Student"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId) || userId != request.StudentId)
+                {
+                    return Forbid();
+                }
+            }
+
+            _logger.LogInformation("What-if calculation requested for student ID: {StudentId}", request.StudentId);
+            var result = await _dashboardService.CalculateWhatIfAsync(request);
+            return Ok(ApiResponse<WhatIfCalculatorResponse>.SuccessResponse(result, "What-if calculation completed successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating what-if for student ID: {StudentId}", request.StudentId);
+            return StatusCode(500, ApiResponse<WhatIfCalculatorResponse>.ErrorResponse("An error occurred while calculating projections"));
+        }
+    }
+
+    /// <summary>
+    /// Get enhanced analytics (cross-batch, trends, distributions)
+    /// </summary>
+    /// <param name="request">Filters for subject, batch, course, date range, and minimum sample size</param>
+    [HttpPost("analytics/enhanced")]
+    [Authorize(Roles = "Admin,Faculty")]
+    [ProducesResponseType(typeof(ApiResponse<EnhancedAnalyticsResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<EnhancedAnalyticsResponse>>> GetEnhancedAnalytics([FromBody] EnhancedAnalyticsRequest request)
+    {
+        try
+        {
+            int? facultyScopeId = null;
+            if (User.IsInRole("Faculty"))
+            {
+                var userIdClaim = User.FindFirst("sub")?.Value;
+                if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var facultyId))
+                {
+                    facultyScopeId = facultyId;
+                }
+            }
+
+            _logger.LogInformation("Enhanced analytics requested with filters: Subject {SubjectId}, Batch {BatchId}, CourseOffering {CourseOfferingId}",
+                request.SubjectId, request.BatchId, request.CourseOfferingId);
+
+            var analytics = await _dashboardService.GetEnhancedAnalyticsAsync(request, facultyScopeId);
+            return Ok(ApiResponse<EnhancedAnalyticsResponse>.SuccessResponse(analytics, "Enhanced analytics retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching enhanced analytics");
+            return StatusCode(500, ApiResponse<EnhancedAnalyticsResponse>.ErrorResponse("An error occurred while fetching analytics"));
         }
     }
 
@@ -165,10 +348,9 @@ public class DashboardController : ControllerBase
     {
         try
         {
-            // Get user ID from JWT claims - check multiple claim types for compatibility
-            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                           ?? User.FindFirst("sub")?.Value;
-            var roleClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            // Get user ID from JWT claims
+            var userIdClaim = User.FindFirst("sub")?.Value;
+            var roleClaim = User.FindFirst("role")?.Value;
 
             if (string.IsNullOrEmpty(userIdClaim))
             {

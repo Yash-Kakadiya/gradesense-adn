@@ -89,4 +89,54 @@ export const studentService = {
     getAttendance: (id) => {
         return api.get(`${API_ENDPOINTS.STUDENTS}/${id}/attendance`)
     },
+
+    // --- Bulk Import Methods ---
+
+    /**
+     * Download student import template
+     * @returns {Promise<Blob>}
+     */
+    getImportTemplate: async () => {
+        const response = await api.get(`${API_ENDPOINTS.STUDENTS}/import/template`, {
+            responseType: 'blob',
+        })
+        return response.data
+    },
+
+    /**
+     * Validate student import file
+     * @param {File} file - Excel or CSV file
+     * @returns {Promise}
+     */
+    validateImport: (file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post(`${API_ENDPOINTS.STUDENTS}/import/validate`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        })
+    },
+
+    /**
+     * Execute student import
+     * @param {Object} request - { rows: [], conflictResolution: 'skip'|'update'|'error' }
+     * @returns {Promise}
+     */
+    executeImport: (request) => {
+        return api.post(`${API_ENDPOINTS.STUDENTS}/import/execute`, request)
+    },
+
+    /**
+     * Export students to CSV
+     * @param {Object} filters
+     * @returns {Promise<Blob>}
+     */
+    exportToCsv: async (filters = {}) => {
+        const response = await api.get(`${API_ENDPOINTS.STUDENTS}/export/csv`, {
+            params: filters,
+            responseType: 'blob',
+        })
+        return response.data
+    },
 }

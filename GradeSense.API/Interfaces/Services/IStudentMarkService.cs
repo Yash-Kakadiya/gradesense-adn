@@ -17,5 +17,10 @@ namespace GradeSense.API.Interfaces.Services
         Task<BulkOperationResponse<StudentMarkResponse>> BulkImportGradesAsync(int assessmentItemId, int graderId, Stream csvStream);
         Task<byte[]> ExportGradesToCsvAsync(StudentMarkExportFilterRequest filter);
         Task<byte[]> GetGradeTemplateAsync(int assessmentItemId);
+        
+        // Enhanced Bulk Operations (Excel support, validation, conflict resolution)
+        Task<BulkGradeValidationResponse> ValidateGradeImportAsync(int assessmentItemId, Stream fileStream, string fileType);
+        Task<BulkOperationResponse<StudentMarkResponse>> ImportGradesWithValidationAsync(BulkGradeImportRequest request);
+        Task<byte[]> GetGradeTemplateExcelAsync(int assessmentItemId);
     }
 }

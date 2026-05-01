@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Card, Badge, Button, EmptyState, Modal, Pagination } from '@/components/common'
+import { Card, Badge, Button, EmptyState, Modal, Pagination, BulkImportModal } from '@/components/common'
 import { useAuth } from '@/context/AuthContext'
 import { dashboardService } from '@/services/dashboardService'
 import { courseEnrollmentService } from '@/services/courseEnrollmentService'
 import { studentService } from '@/services/studentService'
-import { useDebounce } from '@/hooks'
+import { useDebounce, useModal } from '@/hooks'
 import { cn } from '@/utils/helpers'
 import { getErrorMessage } from '@/utils/errorHandler'
 import toast from 'react-hot-toast'
@@ -32,6 +32,7 @@ import {
     List,
     LayoutGrid,
     ExternalLink,
+    Upload,
 } from 'lucide-react'
 
 // Student Detail Modal for Enrollments
@@ -124,7 +125,7 @@ const StudentDetailModal = ({ isOpen, onClose, enrollment, onViewFullDetails }) 
 
 // Enrollment Row for List View
 const EnrollmentRow = ({ enrollment, onRemove, onViewDetails }) => (
-    <tr className="hover:bg-gray-50 transition-colors">
+    <tr className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => onViewDetails(enrollment)}>
         <td className="px-4 py-3">
             <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
@@ -150,14 +151,14 @@ const EnrollmentRow = ({ enrollment, onRemove, onViewDetails }) => (
         </td>
         <td className="px-4 py-3 text-right">
             <div className="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="sm" onClick={() => onViewDetails(enrollment)}>
+                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onViewDetails(enrollment); }}>
                     <Eye className="w-4 h-4" />
                 </Button>
                 <Button
                     variant="ghost"
                     size="sm"
                     className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => onRemove(enrollment)}
+                    onClick={(e) => { e.stopPropagation(); onRemove(enrollment); }}
                 >
                     <Trash2 className="w-4 h-4" />
                 </Button>
@@ -390,7 +391,8 @@ const FacultyEnrollmentsPage = () => {
     const [viewMode, setViewMode] = useState('list')
     const [fullDetailStudentId, setFullDetailStudentId] = useState(null)
     const [isFullDetailModalOpen, setIsFullDetailModalOpen] = useState(false)
-    const pageSize = 12
+    const bulkImportModal = useModal()
+    const [pageSize, setPageSize] = useState(12)
     const debouncedSearch = useDebounce(searchTerm, 300)
 
     // Handler for viewing student details
@@ -429,6 +431,8 @@ const FacultyEnrollmentsPage = () => {
             const params = {
                 pageNumber: currentPage,
                 pageSize,
+                sortBy: 'Id',
+                sortOrder: 'desc',
             }
             if (courseFilter) {
                 params.courseOfferingId = courseFilter
@@ -439,6 +443,27 @@ const FacultyEnrollmentsPage = () => {
             return courseEnrollmentService.getAll(params)
         },
         enabled: courseIds.length > 0,
+    })
+
+    // Fetch full dataset (large page) for stats so cards reflect all records, not current page
+    const { data: enrollmentsStatsData } = useQuery({
+        queryKey: ['faculty-enrollments-stats', courseFilter || courseIds.join(',')],
+        queryFn: () => {
+            const params = {
+                pageNumber: 1,
+                pageSize: 5000,
+                sortBy: 'Id',
+                sortOrder: 'desc',
+            }
+            if (courseFilter) {
+                params.courseOfferingId = courseFilter
+            } else if (courseIds.length > 0) {
+                params.courseOfferingId = courseIds[0]
+            }
+            return courseEnrollmentService.getAll(params)
+        },
+        enabled: courseIds.length > 0,
+        staleTime: 60_000,
     })
 
     const enrollments = useMemo(() => {
@@ -458,15 +483,17 @@ const FacultyEnrollmentsPage = () => {
         })
     }, [enrollments, debouncedSearch, statusFilter])
 
-    const totalCount = enrollmentsData?.Data?.TotalCount || filteredEnrollments.length
+    const totalCount = enrollmentsData?.Data?.TotalRecords || filteredEnrollments.length
     const totalPages = Math.ceil(totalCount / pageSize)
 
-    // Stats
+    // Stats computed from large-page query so cards reflect full dataset
+    const statsEnrollments = useMemo(() => enrollmentsStatsData?.Data?.Data || [], [enrollmentsStatsData])
+    const statsTotal = enrollmentsStatsData?.Data?.TotalRecords || statsEnrollments.length
     const stats = useMemo(() => ({
-        totalEnrollments: enrollments.length,
-        activeEnrollments: enrollments.filter(e => e.Status === 'Active').length,
+        totalEnrollments: statsTotal,
+        activeEnrollments: statsEnrollments.filter(e => e.Status === 'Active').length,
         totalCourses: courses.length,
-    }), [enrollments, courses])
+    }), [statsTotal, statsEnrollments, courses])
 
     // Bulk enroll mutation
     const bulkEnrollMutation = useMutation({
@@ -513,6 +540,15 @@ const FacultyEnrollmentsPage = () => {
                     <Button variant="outline" onClick={() => refetch()}>
                         <RefreshCcw className="w-4 h-4 mr-2" />
                         Refresh
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={bulkImportModal.open}
+                        disabled={!courseFilter}
+                        title={!courseFilter ? 'Select a course first' : 'Import students from Excel'}
+                    >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Import
                     </Button>
                     <Button variant="primary" onClick={() => setEnrollModalOpen(true)}>
                         <Plus className="w-4 h-4 mr-2" />
@@ -685,7 +721,13 @@ const FacultyEnrollmentsPage = () => {
                                     <Pagination
                                         currentPage={currentPage}
                                         totalPages={totalPages}
+                                        totalItems={totalCount}
+                                        pageSize={pageSize}
                                         onPageChange={setCurrentPage}
+                                        onPageSizeChange={(size) => {
+                                            setPageSize(size)
+                                            setCurrentPage(1)
+                                        }}
                                     />
                                 </div>
                             )}
@@ -710,7 +752,13 @@ const FacultyEnrollmentsPage = () => {
                                     <Pagination
                                         currentPage={currentPage}
                                         totalPages={totalPages}
+                                        totalItems={totalCount}
+                                        pageSize={pageSize}
                                         onPageChange={setCurrentPage}
+                                        onPageSizeChange={(size) => {
+                                            setPageSize(size)
+                                            setCurrentPage(1)
+                                        }}
                                     />
                                 </div>
                             )}
@@ -778,6 +826,32 @@ const FacultyEnrollmentsPage = () => {
                 }}
                 studentId={fullDetailStudentId}
                 showEditButton={false}
+            />
+
+            {/* Bulk Enrollment Import Modal */}
+            <BulkImportModal
+                isOpen={bulkImportModal.isOpen}
+                onClose={bulkImportModal.close}
+                title="Import Student Enrollments"
+                entityName="enrollments"
+                onDownloadTemplate={() => courseEnrollmentService.getTemplateExcel(courseFilter)}
+                onValidate={({ file }) => courseEnrollmentService.validateImport(courseFilter, file)}
+                onExecuteImport={(data) => courseEnrollmentService.executeImport({
+                    courseOfferingId: parseInt(courseFilter),
+                    conflictResolution: data.conflictResolution,
+                    rows: data.rows.map(row => ({
+                        rowNumber: row.rowNumber,
+                        rollNumber: row.rollNumber
+                    }))
+                })}
+                importContext={{ courseOfferingId: courseFilter }}
+                onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ['faculty-enrollments'] })
+                    queryClient.invalidateQueries({ queryKey: ['faculty-enrollments-stats'] })
+                    queryClient.invalidateQueries({ queryKey: ['faculty-students'] })
+                    queryClient.invalidateQueries({ queryKey: ['enrollment-stats'] })
+                    toast.success('Enrollments imported successfully')
+                }}
             />
         </div>
     )

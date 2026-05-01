@@ -45,6 +45,7 @@ public class FacultyDashboardResponse
 public class FacultyCourseItem
 {
     public int CourseOfferingId { get; set; }
+    public int SubjectId { get; set; }
     public string SubjectCode { get; set; } = string.Empty;
     public string SubjectName { get; set; } = string.Empty;
     public string BatchName { get; set; } = string.Empty;
@@ -55,6 +56,8 @@ public class FacultyCourseItem
     public decimal AverageScore { get; set; }
     public decimal AverageAttendance { get; set; }
     public bool IsCoordinator { get; set; }
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
 }
 
 /// <summary>

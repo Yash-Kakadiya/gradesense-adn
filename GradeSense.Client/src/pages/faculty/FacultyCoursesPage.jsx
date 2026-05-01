@@ -1,12 +1,16 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, Badge, Button, SearchInput, EmptyState, Modal } from '@/components/common'
 import { useAuth } from '@/context/AuthContext'
 import { dashboardService } from '@/services/dashboardService'
+import { facultyAssignmentService } from '@/services/facultyAssignmentService'
+import { facultyService } from '@/services/facultyService'
+import { subjectService } from '@/services/subjectService'
 import { useDebounce } from '@/hooks'
 import { ROUTES } from '@/utils/constants'
 import { cn } from '@/utils/helpers'
+import toast from 'react-hot-toast'
 import {
     BookOpen,
     Users,
@@ -27,10 +31,114 @@ import {
     TrendingUp,
     RefreshCcw,
     X,
+    UserPlus,
+    Trash2,
+    Shield,
+    FileText,
+    Tag,
+    CheckCircle,
+    AlertCircle,
+    Info,
 } from 'lucide-react'
+
+const ROLE_OPTIONS = [
+    { value: 'Coordinator', label: 'Coordinator', color: 'bg-purple-100 text-purple-700' },
+    { value: 'Instructor', label: 'Instructor', color: 'bg-blue-100 text-blue-700' },
+    { value: 'TA', label: 'Teaching Assistant', color: 'bg-green-100 text-green-700' },
+    { value: 'Lab Instructor', label: 'Lab Instructor', color: 'bg-amber-100 text-amber-700' },
+    { value: 'Guest Lecturer', label: 'Guest Lecturer', color: 'bg-cyan-100 text-cyan-700' },
+]
 
 // Course Detail Modal Component
 const CourseDetailModal = ({ isOpen, onClose, course }) => {
+    const queryClient = useQueryClient()
+    const [showAddForm, setShowAddForm] = useState(false)
+    const [newAssignment, setNewAssignment] = useState({ facultyId: '', role: 'Instructor' })
+
+    const canManageAssignments = course?.IsCoordinator === true
+
+    // Fetch subject details for this course
+    const { data: subjectData, isLoading: loadingSubject } = useQuery({
+        queryKey: ['subject-details', course?.SubjectId],
+        queryFn: () => subjectService.getById(course?.SubjectId),
+        enabled: !!course?.SubjectId && isOpen,
+    })
+
+    const subjectDetails = subjectData?.Data || null
+
+    // Fetch faculty assignments for this course
+    const { data: assignmentsData, isLoading: loadingAssignments } = useQuery({
+        queryKey: ['faculty-assignments-modal', course?.CourseOfferingId],
+        queryFn: () => facultyAssignmentService.getByCourseOffering(course?.CourseOfferingId),
+        enabled: !!course?.CourseOfferingId && isOpen,
+    })
+
+    // Fetch all faculty for the dropdown
+    const { data: facultiesData } = useQuery({
+        queryKey: ['faculties-select-modal-faculty'],
+        queryFn: () => facultyService.getAll({ pageSize: 200, isActive: true }),
+        enabled: canManageAssignments && showAddForm,
+    })
+
+    const assignments = assignmentsData?.Data?.Data || []
+    const faculties = facultiesData?.Data?.Data || []
+
+    // Filter out already assigned faculty
+    const availableFaculty = useMemo(() => {
+        const assignedIds = new Set(assignments.map(a => a.FacultyId))
+        return faculties.filter(f => !assignedIds.has(f.Id))
+    }, [faculties, assignments])
+
+    // Create assignment mutation
+    const createMutation = useMutation({
+        mutationFn: (data) => facultyAssignmentService.create(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['faculty-assignments-modal', course?.CourseOfferingId] })
+            toast.success('Faculty assigned successfully')
+            setShowAddForm(false)
+            setNewAssignment({ facultyId: '', role: 'Instructor' })
+        },
+        onError: (error) => {
+            toast.error(error.response?.data?.Message || 'Failed to assign faculty')
+        }
+    })
+
+    // Delete assignment mutation
+    const deleteMutation = useMutation({
+        mutationFn: (id) => facultyAssignmentService.delete(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['faculty-assignments-modal', course?.CourseOfferingId] })
+            toast.success('Faculty assignment removed')
+        },
+        onError: (error) => {
+            toast.error(error.response?.data?.Message || 'Failed to remove assignment')
+        }
+    })
+
+    const handleAddAssignment = () => {
+        if (!newAssignment.facultyId) {
+            toast.error('Please select a faculty member')
+            return
+        }
+        createMutation.mutate({
+            courseOfferingId: course.CourseOfferingId,
+            facultyId: parseInt(newAssignment.facultyId),
+            role: newAssignment.role,
+            assignmentDate: new Date().toISOString(),
+        })
+    }
+
+    const handleRemoveAssignment = (assignmentId) => {
+        if (window.confirm('Are you sure you want to remove this faculty assignment?')) {
+            deleteMutation.mutate(assignmentId)
+        }
+    }
+
+    const getRoleBadgeClass = (role) => {
+        const option = ROLE_OPTIONS.find(r => r.value === role)
+        return option?.color || 'bg-gray-100 text-gray-700'
+    }
+
     if (!course) return null
 
     const formatDate = (dateString) => {
@@ -87,35 +195,93 @@ const CourseDetailModal = ({ isOpen, onClose, course }) => {
                 {/* Subject Details */}
                 <div>
                     <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Subject Information</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                            <div className="p-2 bg-indigo-100 rounded-lg">
-                                <BookOpen className="w-5 h-5 text-indigo-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Subject Code</p>
-                                <p className="font-medium text-gray-900">{course.SubjectCode}</p>
-                            </div>
+                    {loadingSubject ? (
+                        <div className="flex items-center justify-center p-4">
+                            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                         </div>
-                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                            <div className="p-2 bg-cyan-100 rounded-lg">
-                                <GraduationCap className="w-5 h-5 text-cyan-600" />
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <div className="p-2 bg-indigo-100 rounded-lg">
+                                        <BookOpen className="w-5 h-5 text-indigo-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Subject Code</p>
+                                        <p className="font-medium text-gray-900">{course.SubjectCode}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <div className="p-2 bg-cyan-100 rounded-lg">
+                                        <GraduationCap className="w-5 h-5 text-cyan-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Credits</p>
+                                        <p className="font-medium text-gray-900">{subjectDetails?.Credit || 'N/A'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <div className="p-2 bg-teal-100 rounded-lg">
+                                        <Calendar className="w-5 h-5 text-teal-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Academic Year</p>
+                                        <p className="font-medium text-gray-900">{course.AcademicYear}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <div className="p-2 bg-purple-100 rounded-lg">
+                                        <Tag className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Subject Type</p>
+                                        <p className="font-medium text-gray-900">{subjectDetails?.SubjectType || 'Theory'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <div className="p-2 bg-amber-100 rounded-lg">
+                                        {subjectDetails?.IsElective ? (
+                                            <CheckCircle className="w-5 h-5 text-amber-600" />
+                                        ) : (
+                                            <AlertCircle className="w-5 h-5 text-amber-600" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Elective</p>
+                                        <p className="font-medium text-gray-900">{subjectDetails?.IsElective ? 'Yes' : 'No'}</p>
+                                    </div>
+                                </div>
+                                {subjectDetails?.PrerequisiteSubjectName && (
+                                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                        <div className="p-2 bg-rose-100 rounded-lg">
+                                            <Info className="w-5 h-5 text-rose-600" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500">Prerequisite</p>
+                                            <p className="font-medium text-gray-900">{subjectDetails.PrerequisiteSubjectName}</p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Credits</p>
-                                <p className="font-medium text-gray-900">{course.Credits || 'N/A'}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                            <div className="p-2 bg-teal-100 rounded-lg">
-                                <Calendar className="w-5 h-5 text-teal-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Academic Year</p>
-                                <p className="font-medium text-gray-900">{course.AcademicYear}</p>
-                            </div>
-                        </div>
-                    </div>
+                            {/* Description */}
+                            {subjectDetails?.Description && (
+                                <div className="mt-4 p-3 bg-gray-50 rounded-xl">
+                                    <p className="text-xs text-gray-500 mb-1">Description</p>
+                                    <p className="text-sm text-gray-700">{subjectDetails.Description}</p>
+                                </div>
+                            )}
+                            {/* Syllabus */}
+                            {subjectDetails?.Syllabus && (
+                                <div className="mt-3 p-3 bg-blue-50 rounded-xl">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <FileText className="w-4 h-4 text-blue-600" />
+                                        <p className="text-xs text-blue-700 font-medium">Syllabus</p>
+                                    </div>
+                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{subjectDetails.Syllabus}</p>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
 
                 {/* Batch Details */}
@@ -179,6 +345,136 @@ const CourseDetailModal = ({ isOpen, onClose, course }) => {
                     </div>
                 )}
 
+                {/* Faculty Assignments Section - Only for Coordinators */}
+                {canManageAssignments && (
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                <Shield className="w-4 h-4" />
+                                Faculty Assignments
+                            </h4>
+                            {!showAddForm && (
+                                <button
+                                    onClick={() => setShowAddForm(true)}
+                                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+                                >
+                                    <UserPlus className="w-4 h-4" />
+                                    Add Faculty
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Add Assignment Form */}
+                        {showAddForm && (
+                            <div className="mb-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                                <div className="flex items-end gap-3">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                                            Select Faculty
+                                        </label>
+                                        <select
+                                            value={newAssignment.facultyId}
+                                            onChange={(e) => setNewAssignment(prev => ({ ...prev, facultyId: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                                        >
+                                            <option value="">Choose a faculty...</option>
+                                            {availableFaculty.map(f => (
+                                                <option key={f.Id} value={f.Id}>
+                                                    {f.FullName} ({f.EmployeeId})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="w-40">
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                                            Role
+                                        </label>
+                                        <select
+                                            value={newAssignment.role}
+                                            onChange={(e) => setNewAssignment(prev => ({ ...prev, role: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                                        >
+                                            {ROLE_OPTIONS.map(r => (
+                                                <option key={r.value} value={r.value}>{r.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={handleAddAssignment}
+                                            disabled={createMutation.isPending}
+                                            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                                        >
+                                            {createMutation.isPending ? 'Adding...' : 'Add'}
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowAddForm(false)
+                                                setNewAssignment({ facultyId: '', role: 'Instructor' })
+                                            }}
+                                            className="px-3 py-2 text-sm font-medium text-gray-600 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Assignments List */}
+                        {loadingAssignments ? (
+                            <div className="text-center py-4 text-gray-500 text-sm">Loading assignments...</div>
+                        ) : assignments.length === 0 ? (
+                            <div className="text-center py-6 bg-gray-50 rounded-xl">
+                                <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                                <p className="text-sm text-gray-500">No faculty assigned yet</p>
+                                {!showAddForm && (
+                                    <button
+                                        onClick={() => setShowAddForm(true)}
+                                        className="mt-2 text-sm text-indigo-600 hover:text-indigo-700"
+                                    >
+                                        Add the first faculty member
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {assignments.map(assignment => (
+                                    <div
+                                        key={assignment.Id}
+                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-xl group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-medium">
+                                                {assignment.FacultyName?.charAt(0) || 'F'}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-medium text-gray-900">{assignment.FacultyName}</p>
+                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeClass(assignment.Role)}`}>
+                                                        {assignment.Role || 'Instructor'}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    {assignment.FacultyEmployeeId} • Assigned {formatDate(assignment.AssignmentDate)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleRemoveAssignment(assignment.Id)}
+                                            disabled={deleteMutation.isPending}
+                                            className="p-2 text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-50 rounded-lg transition-all"
+                                            title="Remove assignment"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Actions */}
                 <div className="flex gap-3 pt-4 border-t">
                     <Button variant="outline" className="flex-1" onClick={onClose}>
@@ -199,7 +495,10 @@ const CourseCard = ({ course, onViewDetails, onGrades, onAttendance }) => {
     ]
 
     return (
-        <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden border-0 shadow-md">
+        <Card
+            className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden border-0 shadow-md cursor-pointer"
+            onClick={() => onViewDetails(course)}
+        >
             {/* Top colored bar */}
             <div className="h-2 bg-gradient-to-r from-blue-500 to-indigo-600" />
 
@@ -263,7 +562,7 @@ const CourseCard = ({ course, onViewDetails, onGrades, onAttendance }) => {
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => onGrades(course)}
+                        onClick={(e) => { e.stopPropagation(); onGrades(course); }}
                     >
                         <ClipboardCheck className="w-4 h-4 mr-1" />
                         Grades
@@ -272,7 +571,7 @@ const CourseCard = ({ course, onViewDetails, onGrades, onAttendance }) => {
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => onAttendance(course)}
+                        onClick={(e) => { e.stopPropagation(); onAttendance(course); }}
                     >
                         <Calendar className="w-4 h-4 mr-1" />
                         Attendance
@@ -280,7 +579,7 @@ const CourseCard = ({ course, onViewDetails, onGrades, onAttendance }) => {
                     <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => onViewDetails(course)}
+                        onClick={(e) => { e.stopPropagation(); onViewDetails(course); }}
                     >
                         <Eye className="w-4 h-4" />
                     </Button>
@@ -292,7 +591,7 @@ const CourseCard = ({ course, onViewDetails, onGrades, onAttendance }) => {
 
 // Course List Row Component
 const CourseListRow = ({ course, onViewDetails, onGrades, onAttendance }) => (
-    <tr className="hover:bg-gray-50 transition-colors">
+    <tr className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => onViewDetails(course)}>
         <td className="px-4 py-4">
             <div className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-lg">
@@ -338,13 +637,13 @@ const CourseListRow = ({ course, onViewDetails, onGrades, onAttendance }) => (
         </td>
         <td className="px-4 py-4">
             <div className="flex items-center justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => onGrades(course)}>
+                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onGrades(course); }}>
                     <ClipboardCheck className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onAttendance(course)}>
+                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onAttendance(course); }}>
                     <Calendar className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onViewDetails(course)}>
+                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onViewDetails(course); }}>
                     <Eye className="w-4 h-4" />
                 </Button>
             </div>

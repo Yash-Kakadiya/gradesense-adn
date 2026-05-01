@@ -102,7 +102,9 @@ namespace GradeSense.API.Services
                     Role = user.Role,
                     IsActive = user.IsActive,
                     CreatedAt = user.CreatedAt,
-                    UpdatedAt = user.UpdatedAt
+                    UpdatedAt = user.UpdatedAt,
+                    FacultyId = user.Faculty?.Id,
+                    StudentId = user.Student?.Id
                 }
             };
         }

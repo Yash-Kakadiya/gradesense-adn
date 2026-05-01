@@ -68,6 +68,8 @@ export const AuthProvider = ({ children }) => {
                 profileImagePath: userData.ProfileImagePath,
                 createdAt: userData.CreatedAt,
                 updatedAt: userData.UpdatedAt,
+                facultyId: userData.FacultyId,
+                studentId: userData.StudentId,
             } : {
                 id: decoded.nameid || decoded.sub,
                 email: decoded.email,

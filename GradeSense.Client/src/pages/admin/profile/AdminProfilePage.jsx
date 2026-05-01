@@ -379,6 +379,309 @@ export const ChangePasswordModal = ({ isOpen, onClose, userId, userName }) => {
     )
 }
 
+// Admin Reset Password Modal Component - For admins to reset user passwords without requiring current password
+export const AdminResetPasswordModal = ({ isOpen, onClose, userId, userName }) => {
+    const [formData, setFormData] = useState({
+        newPassword: '',
+        confirmPassword: '',
+    })
+    const [showPasswords, setShowPasswords] = useState({
+        new: false,
+        confirm: false,
+    })
+    const [errors, setErrors] = useState({})
+
+    const resetPasswordMutation = useMutation({
+        mutationFn: (data) => userService.adminResetPassword(userId, {
+            newPassword: data.newPassword,
+            confirmPassword: data.confirmPassword,
+        }),
+        onSuccess: () => {
+            toast.success('Password reset successfully')
+            handleClose()
+        },
+        onError: (error) => {
+            const errorData = error.response?.data
+            if (errorData?.errors) {
+                const validationErrors = {}
+                Object.entries(errorData.errors).forEach(([key, messages]) => {
+                    const fieldName = key.charAt(0).toLowerCase() + key.slice(1)
+                    validationErrors[fieldName] = Array.isArray(messages) ? messages[0] : messages
+                })
+                setErrors(validationErrors)
+                const firstError = Object.values(validationErrors)[0]
+                toast.error(firstError || 'Validation failed')
+            } else {
+                const message = errorData?.Message || 'Failed to reset password'
+                toast.error(message)
+            }
+        },
+    })
+
+    const handleClose = () => {
+        setFormData({
+            newPassword: '',
+            confirmPassword: '',
+        })
+        setShowPasswords({ new: false, confirm: false })
+        setErrors({})
+        onClose()
+    }
+
+    const validateForm = () => {
+        const newErrors = {}
+
+        if (!formData.newPassword) {
+            newErrors.newPassword = 'New password is required'
+        } else if (formData.newPassword.length < 6) {
+            newErrors.newPassword = 'Password must be at least 6 characters'
+        }
+
+        if (!formData.confirmPassword) {
+            newErrors.confirmPassword = 'Please confirm the new password'
+        } else if (formData.newPassword !== formData.confirmPassword) {
+            newErrors.confirmPassword = 'Passwords do not match'
+        }
+
+        setErrors(newErrors)
+        return Object.keys(newErrors).length === 0
+    }
+
+    const handleSubmit = (e) => {
+        e.preventDefault()
+        if (validateForm()) {
+            resetPasswordMutation.mutate(formData)
+        }
+    }
+
+    const handleChange = (e) => {
+        const { name, value } = e.target
+        setFormData(prev => ({ ...prev, [name]: value }))
+        if (errors[name]) {
+            setErrors(prev => ({ ...prev, [name]: '' }))
+        }
+    }
+
+    const togglePasswordVisibility = (field) => {
+        setShowPasswords(prev => ({ ...prev, [field]: !prev[field] }))
+    }
+
+    const getPasswordStrength = (password) => {
+        if (!password) return { strength: 0, label: '', color: '' }
+        let strength = 0
+        if (password.length >= 6) strength++
+        if (password.length >= 8) strength++
+        if (/[A-Z]/.test(password)) strength++
+        if (/[0-9]/.test(password)) strength++
+        if (/[^A-Za-z0-9]/.test(password)) strength++
+
+        const levels = [
+            { strength: 0, label: '', color: '' },
+            { strength: 1, label: 'Weak', color: 'bg-red-500' },
+            { strength: 2, label: 'Fair', color: 'bg-orange-500' },
+            { strength: 3, label: 'Good', color: 'bg-yellow-500' },
+            { strength: 4, label: 'Strong', color: 'bg-green-500' },
+            { strength: 5, label: 'Very Strong', color: 'bg-emerald-500' },
+        ]
+
+        return levels[Math.min(strength, 5)]
+    }
+
+    const passwordStrength = getPasswordStrength(formData.newPassword)
+
+    return (
+        <Transition appear show={isOpen} as={Fragment}>
+            <Dialog as="div" className="relative z-50" onClose={handleClose}>
+                <Transition.Child
+                    as={Fragment}
+                    enter="ease-out duration-300"
+                    enterFrom="opacity-0"
+                    enterTo="opacity-100"
+                    leave="ease-in duration-200"
+                    leaveFrom="opacity-100"
+                    leaveTo="opacity-0"
+                >
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+                </Transition.Child>
+
+                <div className="fixed inset-0 overflow-y-auto">
+                    <div className="flex min-h-full items-center justify-center p-4">
+                        <Transition.Child
+                            as={Fragment}
+                            enter="ease-out duration-300"
+                            enterFrom="opacity-0 scale-95"
+                            enterTo="opacity-100 scale-100"
+                            leave="ease-in duration-200"
+                            leaveFrom="opacity-100 scale-100"
+                            leaveTo="opacity-0 scale-95"
+                        >
+                            <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white shadow-2xl transition-all">
+                                {/* Header */}
+                                <div className="relative bg-gradient-to-br from-amber-500 to-orange-600 px-6 py-5">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+
+                                    <button
+                                        type="button"
+                                        onClick={handleClose}
+                                        className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+
+                                    <div className="relative flex flex-col items-center">
+                                        <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center mb-3 ring-4 ring-white/30">
+                                            <Key className="w-8 h-8 text-white" />
+                                        </div>
+                                        <Dialog.Title className="text-xl font-bold text-white">
+                                            Reset Password
+                                        </Dialog.Title>
+                                        <p className="text-white/80 text-sm mt-1">
+                                            Set a new password for {userName || 'this user'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Form */}
+                                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                                    {/* Info Banner */}
+                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                                        <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                        <p className="text-sm text-amber-700">
+                                            As an admin, you can reset this user's password without knowing their current password.
+                                        </p>
+                                    </div>
+
+                                    {/* New Password */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                            New Password
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords.new ? 'text' : 'password'}
+                                                name="newPassword"
+                                                value={formData.newPassword}
+                                                onChange={handleChange}
+                                                className={cn(
+                                                    "w-full px-4 py-2.5 pr-10 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all",
+                                                    errors.newPassword ? "border-red-300 bg-red-50" : "border-gray-200"
+                                                )}
+                                                placeholder="Enter new password"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => togglePasswordVisibility('new')}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                {showPasswords.new ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                            </button>
+                                        </div>
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Must have: uppercase, lowercase, number, special char (@$!%*?&#)
+                                        </p>
+                                        {formData.newPassword && (
+                                            <div className="mt-2">
+                                                <div className="flex gap-1 mb-1">
+                                                    {[1, 2, 3, 4, 5].map((level) => (
+                                                        <div
+                                                            key={level}
+                                                            className={cn(
+                                                                "h-1.5 flex-1 rounded-full transition-colors",
+                                                                level <= passwordStrength.strength ? passwordStrength.color : "bg-gray-200"
+                                                            )}
+                                                        />
+                                                    ))}
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    Password strength: <span className="font-medium">{passwordStrength.label}</span>
+                                                </p>
+                                            </div>
+                                        )}
+                                        {errors.newPassword && (
+                                            <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                                                <AlertCircle className="w-4 h-4" />
+                                                {errors.newPassword}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Confirm Password */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                            Confirm New Password
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type={showPasswords.confirm ? 'text' : 'password'}
+                                                name="confirmPassword"
+                                                value={formData.confirmPassword}
+                                                onChange={handleChange}
+                                                className={cn(
+                                                    "w-full px-4 py-2.5 pr-10 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all",
+                                                    errors.confirmPassword ? "border-red-300 bg-red-50" : "border-gray-200"
+                                                )}
+                                                placeholder="Confirm new password"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => togglePasswordVisibility('confirm')}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                {showPasswords.confirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                            </button>
+                                        </div>
+                                        {formData.confirmPassword && formData.newPassword === formData.confirmPassword && (
+                                            <p className="mt-1.5 text-sm text-green-600 flex items-center gap-1">
+                                                <CheckCircle className="w-4 h-4" />
+                                                Passwords match
+                                            </p>
+                                        )}
+                                        {errors.confirmPassword && (
+                                            <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                                                <AlertCircle className="w-4 h-4" />
+                                                {errors.confirmPassword}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div className="flex gap-3 pt-4">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleClose}
+                                            className="flex-1"
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            type="submit"
+                                            disabled={resetPasswordMutation.isPending}
+                                            className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700"
+                                        >
+                                            {resetPasswordMutation.isPending ? (
+                                                <>
+                                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                                    Resetting...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Key className="w-4 h-4 mr-2" />
+                                                    Reset Password
+                                                </>
+                                            )}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </Dialog.Panel>
+                        </Transition.Child>
+                    </div>
+                </div>
+            </Dialog>
+        </Transition>
+    )
+}
+
 // Main Profile Page Component
 const AdminProfilePage = () => {
     const { user: authUser } = useAuth()

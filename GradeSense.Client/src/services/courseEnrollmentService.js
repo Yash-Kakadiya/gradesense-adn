@@ -78,4 +78,40 @@ export const courseEnrollmentService = {
     bulkEnroll: (data) => {
         return api.post(`${API_ENDPOINTS.COURSE_ENROLLMENTS}/bulk`, data)
     },
+
+    /**
+     * Download Excel template for enrollment import
+     * @param {number} courseOfferingId
+     * @returns {Promise<Blob>}
+     */
+    getTemplateExcel: async (courseOfferingId) => {
+        const response = await api.get(`${API_ENDPOINTS.COURSE_ENROLLMENTS}/import/template/excel/${courseOfferingId}`, {
+            responseType: 'blob'
+        })
+        return response
+    },
+
+    /**
+     * Validate enrollment import file and get preview
+     * @param {number} courseOfferingId
+     * @param {File} file
+     * @returns {Promise}
+     */
+    validateImport: (courseOfferingId, file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post(`${API_ENDPOINTS.COURSE_ENROLLMENTS}/import/validate`, formData, {
+            params: { courseOfferingId },
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+    },
+
+    /**
+     * Execute enrollment import with conflict resolution
+     * @param {Object} data - { courseOfferingId, conflictResolution, rows }
+     * @returns {Promise}
+     */
+    executeImport: (data) => {
+        return api.post(`${API_ENDPOINTS.COURSE_ENROLLMENTS}/import/execute`, data)
+    },
 }

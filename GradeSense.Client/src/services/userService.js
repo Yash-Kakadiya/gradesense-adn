@@ -67,6 +67,19 @@ export const userService = {
     },
 
     /**
+     * Admin reset user password (without requiring current password)
+     * @param {number} id
+     * @param {Object} data - { newPassword, confirmPassword }
+     * @returns {Promise}
+     */
+    adminResetPassword: (id, data) => {
+        return api.put(`${API_ENDPOINTS.USERS}/${id}/admin-reset-password`, {
+            newPassword: data.newPassword,
+            confirmPassword: data.confirmPassword,
+        })
+    },
+
+    /**
      * Activate user
      * @param {number} id
      * @returns {Promise}
@@ -107,5 +120,42 @@ export const userService = {
      */
     deleteProfileImage: (id) => {
         return api.delete(`${API_ENDPOINTS.USERS}/${id}/profile-image`)
+    },
+
+    // --- Bulk Import Methods ---
+
+    /**
+     * Download user import template
+     * @returns {Promise<Blob>}
+     */
+    getImportTemplate: async () => {
+        const response = await api.get(`${API_ENDPOINTS.USERS}/import/template`, {
+            responseType: 'blob',
+        })
+        return response.data
+    },
+
+    /**
+     * Validate user import file
+     * @param {File} file - Excel or CSV file
+     * @returns {Promise}
+     */
+    validateImport: (file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post(`${API_ENDPOINTS.USERS}/import/validate`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        })
+    },
+
+    /**
+     * Execute user import
+     * @param {Object} request - { rows: [], conflictResolution: 'skip'|'update'|'error' }
+     * @returns {Promise}
+     */
+    executeImport: (request) => {
+        return api.post(`${API_ENDPOINTS.USERS}/import/execute`, request)
     },
 }

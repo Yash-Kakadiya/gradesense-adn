@@ -106,6 +106,56 @@ public static class CsvHelperService
         return await GenerateCsvAsync(sampleRecords);
     }
 
+    /// <summary>
+    /// Parse CSV file for enrollment import (simple format: Roll Number only)
+    /// </summary>
+    public static (List<EnrollmentImportRowData> Records, List<CsvParseError> Errors) ParseEnrollmentImportCsv(Stream stream)
+    {
+        var records = new List<EnrollmentImportRowData>();
+        var errors = new List<CsvParseError>();
+
+        using var reader = new StreamReader(stream);
+        using var csv = new CsvReader(reader, GetCsvConfiguration());
+
+        // Read header
+        csv.Read();
+        csv.ReadHeader();
+
+        int rowNumber = 1;
+        while (csv.Read())
+        {
+            rowNumber++;
+            try
+            {
+                var rollNumber = csv.GetField<string>("RollNumber") 
+                    ?? csv.GetField<string>("Roll Number")
+                    ?? csv.GetField<string>("EnrollmentNumber")
+                    ?? csv.GetField<string>("Enrollment Number")
+                    ?? csv.GetField<string>("Student ID")
+                    ?? "";
+
+                if (string.IsNullOrWhiteSpace(rollNumber)) continue;
+
+                records.Add(new EnrollmentImportRowData
+                {
+                    RowNumber = rowNumber,
+                    RollNumber = rollNumber.Trim()
+                });
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new CsvParseError
+                {
+                    RowNumber = rowNumber,
+                    RawData = csv.Parser.RawRecord,
+                    ErrorMessage = ex.Message
+                });
+            }
+        }
+
+        return (records, errors);
+    }
+
     private static CsvConfiguration GetCsvConfiguration()
     {
         return new CsvConfiguration(CultureInfo.InvariantCulture)

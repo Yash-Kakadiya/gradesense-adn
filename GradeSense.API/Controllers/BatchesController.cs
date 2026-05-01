@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Faculty")]
     public class BatchesController : ControllerBase
     {
         private readonly IBatchService _batchService;
@@ -87,6 +87,7 @@ namespace GradeSense.API.Controllers
         /// Create a new batch
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<BatchResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<BatchResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<BatchResponse>>> Create(
@@ -129,6 +130,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing batch
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<BatchResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<BatchResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<BatchResponse>), StatusCodes.Status400BadRequest)]
@@ -176,6 +178,7 @@ namespace GradeSense.API.Controllers
         /// Delete a batch (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]

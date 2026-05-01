@@ -71,4 +71,41 @@ export const facultyService = {
     getCourses: (id) => {
         return api.get(`${API_ENDPOINTS.FACULTIES}/${id}/courses`)
     },
+
+    // --- Bulk Import Methods ---
+
+    /**
+     * Download faculty import template
+     * @returns {Promise<Blob>}
+     */
+    getImportTemplate: async () => {
+        const response = await api.get(`${API_ENDPOINTS.FACULTIES}/import/template`, {
+            responseType: 'blob',
+        })
+        return response.data
+    },
+
+    /**
+     * Validate faculty import file
+     * @param {File} file - Excel or CSV file
+     * @returns {Promise}
+     */
+    validateImport: (file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post(`${API_ENDPOINTS.FACULTIES}/import/validate`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        })
+    },
+
+    /**
+     * Execute faculty import
+     * @param {Object} request - { rows: [], conflictResolution: 'skip'|'update'|'error' }
+     * @returns {Promise}
+     */
+    executeImport: (request) => {
+        return api.post(`${API_ENDPOINTS.FACULTIES}/import/execute`, request)
+    },
 }

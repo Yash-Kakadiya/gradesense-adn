@@ -1,6 +1,7 @@
 ﻿using GradeSense.API.DTOs.Common;
 using GradeSense.API.DTOs.CourseEnrollment.Request;
 using GradeSense.API.DTOs.CourseEnrollment.Response;
+using GradeSense.API.Helpers;
 using GradeSense.API.Interfaces.Repositories;
 using GradeSense.API.Interfaces.Services;
 using GradeSense.API.Models;
@@ -39,6 +40,34 @@ namespace GradeSense.API.Services
         {
             var (courseEnrollments, total) = await _courseEnrollmentRepository.GetAllAsync(filter);
 
+            // Get enrollment IDs to fetch marks
+            var enrollmentIds = courseEnrollments.Select(ce => ce.Id).ToList();
+            
+            // Bulk fetch marks for all enrollments
+            var marksLookup = new Dictionary<int, decimal>();
+            if (enrollmentIds.Any())
+            {
+                var allMarks = await _studentMarkRepository.GetByEnrollmentIdsAsync(enrollmentIds);
+                foreach (var enrollmentId in enrollmentIds)
+                {
+                    var enrollmentMarks = allMarks
+                        .Where(m => m.EnrollmentId == enrollmentId && m.DeletedAt == null)
+                        .ToList();
+                    if (enrollmentMarks.Any())
+                    {
+                        // Calculate percentage: sum(obtained/max * 100) / count
+                        var avgPercentage = enrollmentMarks
+                            .Where(m => m.AssessmentItem.MaxMarks > 0)
+                            .Select(m => (m.ObtainedMarks / m.AssessmentItem.MaxMarks) * 100)
+                            .DefaultIfEmpty(0)
+                            .Average();
+
+                        // Fix: avgPercentage may be nullable, so use ?? 0m to ensure decimal
+                        marksLookup[enrollmentId] = Math.Round(avgPercentage ?? 0m, 1);
+                    }
+                }
+            }
+
             var data = courseEnrollments.Select(ce => new CourseEnrollmentListResponse
             {
                 Id = ce.Id,
@@ -46,15 +75,24 @@ namespace GradeSense.API.Services
                 CourseOfferingId = ce.CourseOfferingId,
                 SubjectCode = ce.CourseOffering.Subject.Code,
                 SubjectName = ce.CourseOffering.Subject.Name,
+                SubjectDescription = ce.CourseOffering.Subject.Description,
+                Credits = ce.CourseOffering.Subject.Credit,
                 BatchName = ce.CourseOffering.Batch.Name,
+                Semester = ce.CourseOffering.Batch.Semester,
+                AcademicYear = ce.CourseOffering.AcademicYear,
+                FacultyName = ce.CourseOffering.SubjectCoordinator?.IdNavigation?.FullName,
+                IsActive = ce.CourseOffering.IsActive,
                 StudentName = ce.Student.IdNavigation.FullName,
                 EnrollmentNumber = ce.Student.EnrollmentNumber,
                 RollNumber = ce.RollNumber,
                 PersonalEmail = ce.Student.IdNavigation.PersonalEmail,
                 PhoneNumber = ce.Student.IdNavigation.PhoneNumber,
+                DepartmentId = ce.Student.DepartmentId,
+                DepartmentName = ce.Student.Department?.Name,
                 EnrollmentDate = ce.EnrollmentDate,
                 Status = ce.Status,
                 AttendancePercentage = ce.AttendancePercentage,
+                AverageScore = marksLookup.TryGetValue(ce.Id, out var avg) ? avg : 0,
                 Grade = ce.Grade,
                 CreatedAt = ce.CreatedAt
             }).ToList();
@@ -322,5 +360,281 @@ namespace GradeSense.API.Services
 
             return await _courseEnrollmentRepository.DeleteAsync(id);
         }
+
+        #region Bulk Import Methods
+
+        /// <summary>
+        /// Generate Excel template for enrollment import
+        /// </summary>
+        public async Task<byte[]> GetEnrollmentTemplateExcelAsync(int courseOfferingId)
+        {
+            var courseOffering = await _courseOfferingRepository.GetByIdAsync(courseOfferingId);
+            if (courseOffering == null)
+                throw new KeyNotFoundException("Course offering not found");
+
+            // Create template with sample rows
+            var templateData = new[]
+            {
+                new { RollNumber = "21CE001" }, // Example row
+                new { RollNumber = "21CE002" }  // Example row
+            };
+
+            return ExcelHelperService.GenerateExcel(templateData, $"Enrollment - {courseOffering.Subject.Code}");
+        }
+
+        /// <summary>
+        /// Validate enrollment import file and return preview
+        /// </summary>
+        public async Task<BulkEnrollmentValidationResponse> ValidateEnrollmentImportAsync(
+            int courseOfferingId, Stream stream, string extension)
+        {
+            var response = new BulkEnrollmentValidationResponse();
+
+            // Validate course offering exists
+            var courseOffering = await _courseOfferingRepository.GetByIdAsync(courseOfferingId);
+            if (courseOffering == null)
+                throw new KeyNotFoundException("Course offering not found");
+
+            // Parse file
+            List<EnrollmentImportRowData> records;
+            List<(int RowNumber, string? RawData, string ErrorMessage)> parseErrors = new();
+
+            if (extension == ".csv")
+            {
+                var (csvRecords, csvErrors) = CsvHelperService.ParseEnrollmentImportCsv(stream);
+                records = csvRecords;
+                parseErrors = csvErrors.Select(e => (e.RowNumber, e.RawData, e.ErrorMessage)).ToList();
+            }
+            else
+            {
+                var (excelRecords, excelErrors) = ExcelHelperService.ParseEnrollmentImportExcel(stream);
+                records = excelRecords;
+                parseErrors = excelErrors.Select(e => (e.RowNumber, e.RawData, e.ErrorMessage)).ToList();
+            }
+
+            response.TotalRows = records.Count + parseErrors.Count;
+
+            // Add parse errors to response
+            foreach (var error in parseErrors)
+            {
+                response.Rows.Add(new EnrollmentValidationRow
+                {
+                    RowNumber = error.RowNumber,
+                    RollNumber = error.RawData ?? "",
+                    IsValid = false,
+                    Errors = new List<string> { error.ErrorMessage }
+                });
+                response.InvalidRows++;
+            }
+
+            // Fetch all students for matching (more efficient than individual lookups)
+            var allStudents = await _studentRepository.GetAllStudentsForLookupAsync();
+
+            // Fetch existing enrollments for this course offering
+            var existingEnrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(courseOfferingId);
+
+            // Validate each record
+            foreach (var record in records)
+            {
+                var validationRow = new EnrollmentValidationRow
+                {
+                    RowNumber = record.RowNumber,
+                    RollNumber = record.RollNumber,
+                    IsValid = true
+                };
+
+                // Validate roll number
+                if (string.IsNullOrWhiteSpace(record.RollNumber))
+                {
+                    validationRow.Errors.Add("Roll number is required");
+                    validationRow.IsValid = false;
+                }
+                else
+                {
+                    // Find student by enrollment number
+                    var student = allStudents.FirstOrDefault(s =>
+                        s.EnrollmentNumber.Equals(record.RollNumber, StringComparison.OrdinalIgnoreCase));
+
+                    if (student == null)
+                    {
+                        validationRow.Errors.Add($"Student '{record.RollNumber}' not found");
+                        validationRow.IsValid = false;
+                    }
+                    else
+                    {
+                        validationRow.StudentId = student.Id;
+                        validationRow.StudentName = student.IdNavigation?.FullName;
+                        validationRow.StudentEmail = student.IdNavigation?.PersonalEmail;
+                        validationRow.DepartmentName = student.Department?.Name;
+                        validationRow.BatchName = courseOffering.Batch?.Name;
+
+                        // Check if student already enrolled
+                        var existingEnrollment = existingEnrollments.FirstOrDefault(e =>
+                            e.StudentId == student.Id && e.DeletedAt == null);
+
+                        if (existingEnrollment != null)
+                        {
+                            validationRow.HasConflict = true;
+                            validationRow.ExistingEnrollmentId = existingEnrollment.Id;
+                            validationRow.ExistingStatus = existingEnrollment.Status;
+                        }
+                    }
+                }
+
+                if (validationRow.IsValid)
+                {
+                    if (validationRow.HasConflict)
+                        response.ConflictRows++;
+                    else
+                        response.ValidRows++;
+                }
+                else
+                {
+                    response.InvalidRows++;
+                }
+
+                response.Rows.Add(validationRow);
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// Import enrollments with conflict resolution
+        /// </summary>
+        public async Task<BulkOperationResponse<CourseEnrollmentResponse>> ImportEnrollmentsWithValidationAsync(
+            BulkEnrollmentImportRequest request)
+        {
+            var response = new BulkOperationResponse<CourseEnrollmentResponse>();
+
+            // Validate course offering
+            var courseOffering = await _courseOfferingRepository.GetByIdAsync(request.CourseOfferingId);
+            if (courseOffering == null)
+                throw new KeyNotFoundException("Course offering not found");
+
+            response.TotalRecords = request.Rows.Count;
+
+            // Fetch all students for matching
+            var allStudents = await _studentRepository.GetAllStudentsForLookupAsync();
+
+            // Fetch existing enrollments for this course offering
+            var existingEnrollments = await _courseEnrollmentRepository.GetByCourseOfferingIdAsync(request.CourseOfferingId);
+
+            foreach (var row in request.Rows)
+            {
+                try
+                {
+                    // Find student
+                    var student = allStudents.FirstOrDefault(s =>
+                        s.EnrollmentNumber.Equals(row.RollNumber, StringComparison.OrdinalIgnoreCase));
+
+                    if (student == null)
+                    {
+                        response.Errors.Add(new BulkOperationError
+                        {
+                            RowNumber = row.RowNumber,
+                            Identifier = row.RollNumber,
+                            ErrorMessage = "Student not found"
+                        });
+                        continue;
+                    }
+
+                    // Check for existing enrollment
+                    var existingEnrollment = existingEnrollments.FirstOrDefault(e =>
+                        e.StudentId == student.Id && e.DeletedAt == null);
+
+                    CourseEnrollment? finalEnrollment = null;
+
+                    if (existingEnrollment != null)
+                    {
+                        // Handle conflict
+                        switch (request.ConflictResolution.ToLower())
+                        {
+                            case "skip":
+                                response.Errors.Add(new BulkOperationError
+                                {
+                                    RowNumber = row.RowNumber,
+                                    Identifier = row.RollNumber,
+                                    ErrorMessage = "Skipped - student already enrolled"
+                                });
+                                continue;
+
+                            case "error":
+                                response.Errors.Add(new BulkOperationError
+                                {
+                                    RowNumber = row.RowNumber,
+                                    Identifier = row.RollNumber,
+                                    ErrorMessage = "Conflict - student already enrolled"
+                                });
+                                continue;
+
+                            case "update":
+                                // Re-activate enrollment if it was inactive
+                                if (existingEnrollment.Status != "Active")
+                                {
+                                    existingEnrollment.Status = "Active";
+                                    existingEnrollment.UpdatedAt = DateTime.UtcNow;
+                                    await _courseEnrollmentRepository.UpdateAsync(existingEnrollment);
+                                    finalEnrollment = existingEnrollment;
+                                }
+                                else
+                                {
+                                    response.Errors.Add(new BulkOperationError
+                                    {
+                                        RowNumber = row.RowNumber,
+                                        Identifier = row.RollNumber,
+                                        ErrorMessage = "Student already actively enrolled"
+                                    });
+                                    continue;
+                                }
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        // Create new enrollment
+                        var newEnrollment = new CourseEnrollment
+                        {
+                            CourseOfferingId = request.CourseOfferingId,
+                            StudentId = student.Id,
+                            EnrollmentDate = DateTime.UtcNow,
+                            Status = "Active",
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await _courseEnrollmentRepository.CreateAsync(newEnrollment);
+                        finalEnrollment = await _courseEnrollmentRepository.GetByIdAsync(newEnrollment.Id);
+                    }
+
+                    if (finalEnrollment != null)
+                    {
+                        response.SuccessfulRecords.Add(new CourseEnrollmentResponse
+                        {
+                            Id = finalEnrollment.Id,
+                            StudentId = finalEnrollment.StudentId,
+                            CourseOfferingId = finalEnrollment.CourseOfferingId,
+                            EnrollmentDate = finalEnrollment.EnrollmentDate,
+                            Status = finalEnrollment.Status,
+                            CreatedAt = finalEnrollment.CreatedAt
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Errors.Add(new BulkOperationError
+                    {
+                        RowNumber = row.RowNumber,
+                        Identifier = row.RollNumber,
+                        ErrorMessage = ex.Message
+                    });
+                }
+            }
+
+            response.SuccessCount = response.SuccessfulRecords.Count;
+            response.ErrorCount = response.Errors.Count;
+
+            return response;
+        }
+
+        #endregion
     }
 }

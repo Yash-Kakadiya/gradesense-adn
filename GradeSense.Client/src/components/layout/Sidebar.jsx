@@ -14,6 +14,7 @@ import {
     ClipboardList,
     FileText,
     BarChart3,
+    TrendingUp,
     UserCog,
     Layers,
     School,
@@ -43,6 +44,12 @@ const navigationConfig = {
                 title: 'Overview',
                 items: [
                     { to: ROUTES.ADMIN_DASHBOARD, icon: LayoutDashboard, label: 'Dashboard' },
+                ]
+            },
+            {
+                title: 'Analytics',
+                items: [
+                    { to: ROUTES.ADMIN_ANALYTICS, icon: BarChart3, label: 'Enhanced Analytics' },
                 ]
             },
             {
@@ -113,6 +120,7 @@ const navigationConfig = {
             {
                 title: 'Analytics',
                 items: [
+                    { to: ROUTES.FACULTY_ANALYTICS, icon: TrendingUp, label: 'Enhanced Analytics' },
                     { to: ROUTES.FACULTY_AT_RISK, icon: AlertTriangle, label: 'At-Risk Students' },
                     { to: ROUTES.FACULTY_REPORTS, icon: BarChart3, label: 'Reports' },
                 ]
@@ -136,6 +144,7 @@ const navigationConfig = {
                     { to: ROUTES.STUDENT_COURSES, icon: BookOpen, label: 'My Courses' },
                     { to: ROUTES.STUDENT_GRADES, icon: FileText, label: 'My Grades' },
                     { to: ROUTES.STUDENT_ATTENDANCE, icon: Calendar, label: 'My Attendance' },
+                    { to: ROUTES.STUDENT_FACULTIES, icon: Users, label: 'Faculties' },
                 ]
             },
             {
@@ -339,13 +348,13 @@ const Sidebar = ({ isOpen, onClose }) => {
             <aside
                 className={cn(
                     'bg-white/95 backdrop-blur-xl border-r border-gray-200/80 flex-shrink-0',
-                    'flex flex-col',
+                    'flex flex-col h-full',
                     // Mobile: fixed overlay
                     'fixed inset-y-0 left-0 z-50 shadow-2xl',
                     'transform transition-all duration-300 ease-out',
                     isOpen ? 'translate-x-0' : '-translate-x-full',
                     // Desktop: static in flex layout
-                    'lg:relative lg:translate-x-0 lg:z-0 lg:shadow-none',
+                    'lg:relative lg:translate-x-0 lg:z-0 lg:shadow-none lg:h-screen',
                     // Collapsible width
                     isCollapsed ? 'w-20' : 'w-72'
                 )}

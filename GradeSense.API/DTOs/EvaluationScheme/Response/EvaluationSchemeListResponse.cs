@@ -3,6 +3,7 @@
     public class EvaluationSchemeListResponse
     {
         public int Id { get; set; }
+        public int CourseOfferingId { get; set; }
         public string SubjectCode { get; set; } = string.Empty;
         public string SubjectName { get; set; } = string.Empty;
         public string BatchName { get; set; } = string.Empty;

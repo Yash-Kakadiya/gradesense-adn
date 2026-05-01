@@ -9,7 +9,7 @@ namespace GradeSense.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Faculty")]
+    [Authorize]
     public class AttendanceRecordsController : ControllerBase
     {
         private readonly IAttendanceRecordService _attendanceRecordService;
@@ -40,7 +40,7 @@ namespace GradeSense.API.Controllers
                 // Students can only see their own attendance records
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId))
                     {
                         return Forbid();
@@ -85,7 +85,7 @@ namespace GradeSense.API.Controllers
                 // Students can only view their own attendance
                 if (User.IsInRole("Student"))
                 {
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = User.FindFirst("sub")?.Value;
                     if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var studentId) || attendanceRecord.StudentId != studentId)
                     {
                         return Forbid();
@@ -110,6 +110,7 @@ namespace GradeSense.API.Controllers
         /// Create a new attendance record
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<AttendanceRecordResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<AttendanceRecordResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<AttendanceRecordResponse>>> Create(
@@ -152,6 +153,7 @@ namespace GradeSense.API.Controllers
         /// Update an existing attendance record
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<AttendanceRecordResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<AttendanceRecordResponse>), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ApiResponse<AttendanceRecordResponse>), StatusCodes.Status400BadRequest)]
@@ -193,6 +195,7 @@ namespace GradeSense.API.Controllers
         /// Delete an attendance record (soft delete)
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
@@ -228,6 +231,7 @@ namespace GradeSense.API.Controllers
         /// Mark attendance for multiple students for a specific date
         /// </remarks>
         [HttpPost("bulk")]
+        [Authorize(Roles = "Admin,Faculty")]
         [ProducesResponseType(typeof(ApiResponse<BulkAttendanceResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<BulkAttendanceResponse>), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<ApiResponse<BulkAttendanceResponse>>> BulkMark(
@@ -268,5 +272,136 @@ namespace GradeSense.API.Controllers
                 ));
             }
         }
+
+        #region Excel Import Operations
+
+        /// <summary>
+        /// Download Excel template for attendance import
+        /// </summary>
+        [HttpGet("import/template/excel/{courseOfferingId}")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetAttendanceTemplateExcel(int courseOfferingId)
+        {
+            try
+            {
+                var excelBytes = await _attendanceRecordService.GetAttendanceTemplateExcelAsync(courseOfferingId);
+                return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    $"attendance_template_course_{courseOfferingId}.xlsx");
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating Excel attendance template for course {CourseOfferingId}", courseOfferingId);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse(
+                    "An error occurred while generating template"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Validate attendance import file and return preview with conflicts
+        /// </summary>
+        /// <remarks>
+        /// Accepts Excel (.xlsx) or CSV (.csv) files.
+        /// Returns validation results with conflict detection for existing attendance.
+        /// </remarks>
+        [HttpPost("import/validate")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(ApiResponse<BulkAttendanceValidationResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkAttendanceValidationResponse>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkAttendanceValidationResponse>>> ValidateAttendanceImport(
+            [FromQuery] int courseOfferingId,
+            [FromQuery] DateOnly date,
+            IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(ApiResponse<BulkAttendanceValidationResponse>.ErrorResponse("No file uploaded"));
+                }
+
+                var extension = Path.GetExtension(file.FileName).ToLower();
+                if (extension != ".csv" && extension != ".xlsx" && extension != ".xls")
+                {
+                    return BadRequest(ApiResponse<BulkAttendanceValidationResponse>.ErrorResponse(
+                        "Only CSV and Excel files are supported"
+                    ));
+                }
+
+                using var stream = file.OpenReadStream();
+                var result = await _attendanceRecordService.ValidateAttendanceImportAsync(courseOfferingId, date, stream, extension);
+
+                return Ok(ApiResponse<BulkAttendanceValidationResponse>.SuccessResponse(
+                    result,
+                    $"Validation complete: {result.ValidRows} valid, {result.InvalidRows} invalid, {result.ConflictRows} conflicts"
+                ));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkAttendanceValidationResponse>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating attendance import");
+                return StatusCode(500, ApiResponse<BulkAttendanceValidationResponse>.ErrorResponse(
+                    "An error occurred while validating import file"
+                ));
+            }
+        }
+
+        /// <summary>
+        /// Import attendance with validation and conflict resolution
+        /// </summary>
+        /// <remarks>
+        /// Import attendance with specified conflict resolution strategy: Skip, Update, or Error
+        /// </remarks>
+        [HttpPost("import/execute")]
+        [Authorize(Roles = "Admin,Faculty")]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>>> ExecuteAttendanceImport(
+            [FromBody] BulkAttendanceImportRequest request)
+        {
+            try
+            {
+                if (request.Rows == null || request.Rows.Count == 0)
+                {
+                    return BadRequest(ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>.ErrorResponse(
+                        "No attendance data provided"
+                    ));
+                }
+
+                var result = await _attendanceRecordService.ImportAttendanceWithValidationAsync(request);
+
+                var message = result.IsSuccess
+                    ? $"Import completed successfully. {result.SuccessCount} records saved."
+                    : $"Import completed with errors. {result.SuccessCount} succeeded, {result.ErrorCount} failed.";
+
+                return Ok(ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>.SuccessResponse(result, message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing attendance import");
+                return StatusCode(500, ApiResponse<BulkOperationResponse<AttendanceRecordResponse>>.ErrorResponse(
+                    "An error occurred while importing attendance"
+                ));
+            }
+        }
+
+        #endregion
     }
 }

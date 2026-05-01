@@ -35,6 +35,9 @@ namespace GradeSense.API.Repositories
                     .ThenInclude(co => co.Subject)
                 .Include(ce => ce.CourseOffering)
                     .ThenInclude(co => co.Batch)
+                .Include(ce => ce.CourseOffering)
+                    .ThenInclude(co => co.SubjectCoordinator)
+                        .ThenInclude(f => f.IdNavigation)
                 .Include(ce => ce.Student)
                     .ThenInclude(s => s.IdNavigation)
                 .Where(ce => ce.DeletedAt == null)
@@ -187,6 +190,8 @@ namespace GradeSense.API.Repositories
             return await _context.CourseEnrollments
                 .Include(ce => ce.Student)
                     .ThenInclude(s => s.IdNavigation)
+                .Include(ce => ce.CourseOffering)
+                    .ThenInclude(co => co.Subject)
                 .Where(ce => ce.CourseOfferingId == courseOfferingId && 
                             ce.DeletedAt == null && 
                             ce.Status == "Active")
