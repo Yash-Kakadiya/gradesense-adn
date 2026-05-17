@@ -29,6 +29,11 @@ dist/
 *.bak
 *~
 
+# User-specific files
+*.secrets.json
+appsettings.Development.json
+appsettings.Production.json
+
 # .NET / ASP.NET Specific
 project.lock.json
 project.fragment.lock.json
