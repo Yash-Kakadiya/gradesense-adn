@@ -279,9 +279,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Production", policy =>
     {
         policy.WithOrigins(
-                "https://gradesense.com",
-                "https://www.gradesense.com",
-                "https://app.gradesense.com"
+                "http://localhost:5173",
+                "https://gradesense.vercel.app"
             )
             .AllowAnyMethod()
             .AllowAnyHeader()
@@ -310,15 +309,18 @@ var app = builder.Build();
 // ============================================================================
 
 // Development-specific middleware
+// Swagger available in all environments
+app.UseSwagger();
+
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "GradeSense API V1");
+    options.RoutePrefix = "swagger";
+});
+
+// Environment-specific middleware
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "GradeSense API V1");
-        options.RoutePrefix = "swagger"; // Access at /swagger
-    });
-
     app.UseDeveloperExceptionPage();
     app.UseCors("AllowAll");
 }
@@ -326,7 +328,9 @@ else
 {
     app.UseExceptionHandler("/error");
     app.UseHsts();
-    app.UseCors("Production");
+
+    // TEMPORARY: allow frontend deployment/testing
+    app.UseCors("AllowAll");
 }
 
 
@@ -367,6 +371,13 @@ logger.LogInformation("GradeSense API Starting...");
 logger.LogInformation("Environment: {Environment}", app.Environment.EnvironmentName);
 logger.LogInformation("JWT Issuer: {Issuer}", jwtSettings.Issuer);
 logger.LogInformation("JWT Expiry: {Expiry} minutes", jwtSettings.ExpiryMinutes);
+
+
+app.MapGet("/", () => Results.Ok(new
+{
+    message = "GradeSense API is running 🚀",
+    swagger = "/swagger"
+}));
 
 // ============================================================================
 // RUN APPLICATION
