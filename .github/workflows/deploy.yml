@@ -1,0 +1,36 @@
+name: Deploy GradeSense API
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore GradeSense.API/GradeSense.API.csproj
+
+      - name: Build project
+        run: dotnet build GradeSense.API/GradeSense.API.csproj --configuration Release --no-restore
+
+      - name: Publish project
+        run: dotnet publish GradeSense.API/GradeSense.API.csproj -c Release -o ./publish
+
+      - name: Deploy to MonsterASP.NET
+        uses: rasmusbuchholdt/simply-web-deploy@2.1.0
+        with:
+          website-name: ${{ secrets.WEBSITE_NAME }}
+          server-computer-name: ${{ secrets.SERVER_COMPUTER_NAME }}
+          server-username: ${{ secrets.SERVER_USERNAME }}
+          server-password: ${{ secrets.SERVER_PASSWORD }}
