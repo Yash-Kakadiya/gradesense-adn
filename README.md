@@ -1,6 +1,13 @@
 
 # GradeSense - Student Performance Tracking System
 
+![ASP.NET Core](https://img.shields.io/badge/ASP.NET_Core-8.0-blueviolet)
+![React](https://img.shields.io/badge/React-18-blue)
+![Vite](https://img.shields.io/badge/Vite-Frontend-purple)
+![SQL Server](https://img.shields.io/badge/Database-SQL_Server-red)
+![JWT](https://img.shields.io/badge/Auth-JWT-green)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 A full-stack web application for tracking and predicting student academic performance using ASP.NET Core Web API and React.
 
 ## 📋 Project Overview
@@ -12,6 +19,36 @@ A full-stack web application for tracking and predicting student academic perfor
 - ✅ Performance analytics and reporting
 - ✅ ML-based prediction for at-risk student identification
 - ✅ Role-based access control (Admin, Faculty, Student)
+
+## 🌐 Live Deployment
+
+### 🚀 Frontend Application
+🔗 https://grade-sense.vercel.app
+
+### ⚙️ Backend API (Swagger Docs)
+🔗 https://gradesense-api.runasp.net/swagger
+
+---
+
+### 🧪 Demo Credentials
+
+#### 👨‍💼 Admin
+```text
+Email: admin@gradesense.edu
+Password: Admin@123
+```
+#### 👩‍🏫 Faculty
+```text
+Email: faculty@gradesense.edu
+Password: Faculty@123
+```
+#### 👨‍🎓 Student
+```text
+Email: student@gradesense.edu
+Password: Student@123
+```
+
+⚠️ Note: Demo credentials are for evaluation and testing purposes only.
 
 ## 🏗️ Architecture
 

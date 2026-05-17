@@ -280,7 +280,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:5173",
-                "https://gradesense.vercel.app"
+                "https://grade-sense.vercel.app"
             )
             .AllowAnyMethod()
             .AllowAnyHeader()
