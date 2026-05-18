@@ -22,6 +22,7 @@ const LoginPage = () => {
     const {
         register,
         handleSubmit,
+        setValue,
         formState: { errors },
     } = useForm({
         resolver: zodResolver(loginSchema),
@@ -51,6 +52,11 @@ const LoginPage = () => {
         } finally {
             setIsLoading(false)
         }
+    }
+
+    const fillCredentials = (email, password) => {
+        setValue('email', email, { shouldValidate: true, shouldDirty: true })
+        setValue('password', password, { shouldValidate: true, shouldDirty: true })
     }
 
     return (
@@ -138,10 +144,40 @@ const LoginPage = () => {
                 {/* Test Credentials */}
                 <div className="mt-6 p-4 bg-white/50 rounded-lg border border-gray-200">
                     <p className="text-sm font-medium text-gray-700 mb-2">Test Credentials:</p>
-                    <div className="space-y-1 text-xs text-gray-600">
-                        <p><span className="font-medium">Admin:</span> admin@gradesense.edu / Admin@123</p>
-                        <p><span className="font-medium">Faculty:</span> faculty@gradesense.edu / Faculty@123</p>
-                        <p><span className="font-medium">Student:</span> student@gradesense.edu / Student@123</p>
+                    <div className="space-y-2 text-xs text-gray-600">
+                        <div className="flex items-center justify-between gap-3">
+                            <p><span className="font-medium">Admin:</span> admin@gradesense.edu / Admin@123</p>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fillCredentials('admin@gradesense.edu', 'Admin@123')}
+                            >
+                                Use
+                            </Button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <p><span className="font-medium">Faculty:</span> faculty@gradesense.edu / Faculty@123</p>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fillCredentials('faculty@gradesense.edu', 'Faculty@123')}
+                            >
+                                Use
+                            </Button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <p><span className="font-medium">Student:</span> student@gradesense.edu / Student@123</p>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fillCredentials('student@gradesense.edu', 'Student@123')}
+                            >
+                                Use
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
