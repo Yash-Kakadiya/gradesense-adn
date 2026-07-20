@@ -24,6 +24,17 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Get server health
+    /// </summary>
+    /// <returns>Server health</returns>
+    [HttpGet("/api/health")]
+    [AllowAnonymous]
+    public IActionResult Health()
+    {
+        return Ok(new { status = "ok", message = "Server is healthy", timestamp = DateTime.UtcNow.ToString("o") });
+    }
+
+    /// <summary>
     /// Get all users with filtering and pagination
     /// </summary>
     /// <param name="filter">Filter parameters</param>
